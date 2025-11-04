@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CoinDrop", "CoinDrop\CoinDrop.csproj", "{5A8CC47B-BB0F-48CD-8E96-7DF3ED24D296}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Domain", "Domain\Domain.csproj", "{285DDA43-1223-4B43-9C03-9E67595AE5BD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApp", "WebApp\WebApp.csproj", "{C68DF4E1-4F16-43B0-910C-EFC29859CDF7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5A8CC47B-BB0F-48CD-8E96-7DF3ED24D296}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A8CC47B-BB0F-48CD-8E96-7DF3ED24D296}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A8CC47B-BB0F-48CD-8E96-7DF3ED24D296}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A8CC47B-BB0F-48CD-8E96-7DF3ED24D296}.Release|Any CPU.Build.0 = Release|Any CPU
+		{285DDA43-1223-4B43-9C03-9E67595AE5BD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{285DDA43-1223-4B43-9C03-9E67595AE5BD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{285DDA43-1223-4B43-9C03-9E67595AE5BD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{285DDA43-1223-4B43-9C03-9E67595AE5BD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C68DF4E1-4F16-43B0-910C-EFC29859CDF7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C68DF4E1-4F16-43B0-910C-EFC29859CDF7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C68DF4E1-4F16-43B0-910C-EFC29859CDF7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C68DF4E1-4F16-43B0-910C-EFC29859CDF7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

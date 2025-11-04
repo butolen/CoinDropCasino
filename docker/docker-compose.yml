@@ -1,7 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: crypto_db
+    container_name: casino_db
     restart: always
     ports:
       - "${MYSQL_PORT}:3306"
