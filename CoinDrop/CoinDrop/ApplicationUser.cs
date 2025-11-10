@@ -43,5 +43,5 @@ public class ApplicationUser
     public ICollection<GameSession> GameSessions { get; set; } = new List<GameSession>();
     public ICollection<HardwareDeposit> HardwareDeposits { get; set; } = new List<HardwareDeposit>();
     public ICollection<CryptoDeposit> CryptoDeposits { get; set; } = new List<CryptoDeposit>();
-    public ICollection<WithdrawalRequest> WithdrawalRequests { get; set; } = new List<WithdrawalRequest>();
+    public ICollection<Withdrawal> WithdrawalRequests { get; set; } = new List<Withdrawal>();
 }
