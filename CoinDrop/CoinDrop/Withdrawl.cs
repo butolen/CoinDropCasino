@@ -13,7 +13,7 @@ public enum WithdrawalStatus
 }
 
 [Table("withdrawal_request")]
-public class WithdrawalRequest
+public class Withdrawal
 {
     [Key]
     [Column("withdrawal_id")]

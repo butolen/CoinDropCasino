@@ -1,3 +1,6 @@
+using CoinDrop;
+using Domain;
+using Microsoft.EntityFrameworkCore;
 using WebApp.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -5,6 +8,22 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+
+// EF Core + MySQL
+builder.Services.AddDbContextFactory<CoinDropContext>(options =>
+    options.UseMySql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        new MySqlServerVersion(new Version(8, 0, 36))
+    ));
+// Repositories
+builder.Services.AddScoped<UserRepo>();
+builder.Services.AddScoped<TransactionRepo>();
+builder.Services.AddScoped<GameSessionRepo>();
+builder.Services.AddScoped<HDepositRepo>();
+builder.Services.AddScoped<CDepositRepo>();
+builder.Services.AddScoped<WithdrawalRepo>();
+builder.Services.AddScoped<LogRepo>();
 
 var app = builder.Build();
 
