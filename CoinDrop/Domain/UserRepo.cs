@@ -1,6 +1,11 @@
+using CoinDrop;
+
 namespace Domain;
 
-public class UserRepo
+public class UserRepo : ARepository<ApplicationUser>
 {
+    public UserRepo(CoinDropContext context) : base(context)
+    {
+    }
     
 }
