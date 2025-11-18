@@ -1,18 +1,16 @@
-namespace CoinDrop;
-
+using Microsoft.AspNetCore.Identity;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+namespace CoinDrop;
+
 [Table("user")]
-public class ApplicationUser
+public class ApplicationUser : IdentityUser<int>
 {
-    [Key]
     [Column("user_id")]
-    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-    public int UserId { get; set; }
+    public override int Id { get; set; }  // PK-Spalte in der DB heißt user_id
 
     [Column("balancephysical", TypeName = "double")]
     [DefaultValue(0.0)]

@@ -1,8 +1,11 @@
-namespace CoinDrop;
 
+using CoinDrop;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
-public class CoinDropContext : DbContext
+public class CoinDropContext
+    : IdentityDbContext<ApplicationUser, IdentityRole<int>, int>
 {
     public CoinDropContext(DbContextOptions<CoinDropContext> options) : base(options) { }
 
@@ -14,77 +17,66 @@ public class CoinDropContext : DbContext
     public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
     public DbSet<Log> Logs => Set<Log>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    protected override void OnModelCreating(ModelBuilder b)
     {
+        // Wichtig: erst die Identity-Basis mappen lassen
+        base.OnModelCreating(b);
+
+        // ---------- Identity-Tabellen auf lowercase ----------
+        b.Entity<ApplicationUser>().ToTable("user");
+        b.Entity<IdentityRole<int>>().ToTable("role");
+        b.Entity<IdentityUserRole<int>>().ToTable("user_role");
+        b.Entity<IdentityUserClaim<int>>().ToTable("user_claim");
+        b.Entity<IdentityUserLogin<int>>().ToTable("user_login");
+        b.Entity<IdentityUserToken<int>>().ToTable("user_token");
+        b.Entity<IdentityRoleClaim<int>>().ToTable("role_claim");
+
         // --- Beziehungen ApplicationUser ---
-        modelBuilder.Entity<ApplicationUser>()
+        b.Entity<ApplicationUser>()
             .HasMany(u => u.Transactions)
             .WithOne(t => t.User)
             .HasForeignKey(t => t.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<ApplicationUser>()
+        b.Entity<ApplicationUser>()
             .HasMany(u => u.GameSessions)
             .WithOne(g => g.User)
             .HasForeignKey(g => g.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<ApplicationUser>()
+        b.Entity<ApplicationUser>()
             .HasMany(u => u.HardwareDeposits)
             .WithOne(h => h.User)
             .HasForeignKey(h => h.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<ApplicationUser>()
+        b.Entity<ApplicationUser>()
             .HasMany(u => u.CryptoDeposits)
             .WithOne(c => c.User)
             .HasForeignKey(c => c.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<ApplicationUser>()
+        b.Entity<ApplicationUser>()
             .HasMany(u => u.WithdrawalRequests)
             .WithOne(w => w.User)
             .HasForeignKey(w => w.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Log optional (User kann null sein)
-        modelBuilder.Entity<Log>()
+        b.Entity<Log>()
             .HasOne(l => l.User)
             .WithMany()
             .HasForeignKey(l => l.UserId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // --- Enum-Konvertierungen ---
-        modelBuilder.Entity<Transaction>()
-            .Property(t => t.Type)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<Transaction>()
-            .Property(t => t.SourceBalance)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<CryptoDeposit>()
-            .Property(c => c.Status)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<GameSession>()
-            .Property(g => g.GameType)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<GameSession>()
-            .Property(g => g.Result)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<Withdrawal>()
-            .Property(w => w.Status)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<Log>()
-            .Property(l => l.ActionType)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<Log>()
-            .Property(l => l.UserType)
-            .HasConversion<string>();
+        // --- Enum-Konvertierungen (Strings in DB) ---
+        b.Entity<Transaction>().Property(t => t.Type).HasConversion<string>();
+        b.Entity<Transaction>().Property(t => t.SourceBalance).HasConversion<string>();
+        b.Entity<CryptoDeposit>().Property(c => c.Status).HasConversion<string>();
+        b.Entity<GameSession>().Property(g => g.GameType).HasConversion<string>();
+        b.Entity<GameSession>().Property(g => g.Result).HasConversion<string>();
+        b.Entity<Withdrawal>().Property(w => w.Status).HasConversion<string>();
+        b.Entity<Log>().Property(l => l.ActionType).HasConversion<string>();
+        b.Entity<Log>().Property(l => l.UserType).HasConversion<string>();
     }
 }
