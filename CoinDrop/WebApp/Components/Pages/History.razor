@@ -1,0 +1,121 @@
+﻿@page "/history"
+@using CoinDrop
+@using WebApp.Data
+@inject CasinoDb Db
+
+<div class="history-container">
+
+    <h2>ROULETTE STATS</h2>
+
+    <div class="stats-section">
+        <div>
+            <h3>Hot Numbers</h3>
+            @foreach (var num in HotNumbers)
+            {
+                <span class="hot">@num</span>
+            }
+        </div>
+
+        <div>
+            <h3>Cold Numbers</h3>
+            @foreach (var num in ColdNumbers)
+            {
+                <span class="cold">@num</span>
+            }
+        </div>
+    </div>
+
+    <button class="btn-history" @onclick="GoToGameHistory">GAME HISTORY</button>
+
+    <h2>TRANSACTION HISTORY</h2>
+
+    <div class="tabs">
+        <button @onclick='@( () => SelectTab("deposit") )'
+                class='@( GetTabClass("deposit") )'>Deposits</button>
+
+        <button @onclick='@( () => SelectTab("withdrawal") )'
+                class='@( GetTabClass("withdrawal") )'>Withdrawals</button>
+
+    </div>
+
+    <table class="txn-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Method</th>
+                <th>Amount</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            @foreach (var t in FilteredTransactions)
+            {
+                <tr>
+                    <td>@t.Type</td>
+                    <td>@t.Amount</td>
+                    <td>@t.Timestamp.ToString("dd.MM.yyyy HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+</div>
+
+@code {
+    List<int> HotNumbers = new();
+    List<int> ColdNumbers = new();
+    List<Transaction> Transactions = new();
+
+    IEnumerable<Transaction> FilteredTransactions =>
+        SelectedTab == "deposit"
+        ? Transactions.Where(t => t.Type == TransactionType.DepositPhysical || t.Type == TransactionType.DepositCrypto)
+        : Transactions.Where(t => t.Type == TransactionType.Withdrawal);
+
+    string SelectedTab = "deposit";
+
+    protected override void OnInitialized()
+    {
+        LoadStats();
+        LoadTransactions();
+    }
+
+    void LoadStats()
+    {
+        HotNumbers = Db.RouletteStats
+            .OrderByDescending(x => x.Count)
+            .Take(3)
+            .Select(x => x.Number)
+            .ToList();
+
+        ColdNumbers = Db.RouletteStats
+            .OrderBy(x => x.Count)
+            .Take(3)
+            .Select(x => x.Number)
+            .ToList();
+    }
+
+    void LoadTransactions()
+    {
+        Transactions = Db.Transactions
+            .OrderByDescending(t => t.Timestamp)
+            .ToList();
+    }
+
+    void SelectTab(string tab) => SelectedTab = tab;
+
+    void GoToGameHistory()
+    {
+        Navigation.NavigateTo("/game");
+    }
+    
+    private string activeTab = "deposit";
+    string GetTabClass(string tab)
+    {
+        return activeTab == tab
+        ? "tab-button active"
+        : "tab-button";
+    }
+
+    [Inject] NavigationManager Navigation { get; set; }
+}
