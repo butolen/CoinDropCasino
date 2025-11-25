@@ -2,12 +2,21 @@ using CoinDrop;
 using Domain;
 using Microsoft.EntityFrameworkCore;
 using WebApp.Components;
+using WebApp.Data;
+using Microsoft.EntityFrameworkCore;
+
+
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+
+
 
 
 // EF Core + MySQL
