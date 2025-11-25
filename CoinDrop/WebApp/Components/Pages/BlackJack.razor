@@ -1,0 +1,338 @@
+﻿@page "/blackJack"
+<style>
+.table {
+    background: linear-gradient(#0b592f, #064425);
+    border-radius: 12px;
+    padding: 24px;
+    color: #f3d480;
+    font-family: "Segoe UI", Roboto, Arial, sans-serif;
+    max-width: 920px;
+    margin: 18px auto;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+}
+.header { display:flex; align-items:center; gap:12px; margin-bottom:8px }
+.title { font-weight:700; font-size:28px }
+.row { display:flex; align-items:center; gap:12px }
+.card-stack { display:flex; gap:8px; align-items:flex-end }
+.card {
+    width:84px; height:120px; border-radius:8px; background:#fff; color:#000; display:flex; flex-direction:column; justify-content:space-between; padding:8px; box-shadow:0 4px 8px rgba(0,0,0,0.3);
+}
+.card.small { width:66px; height:96px }
+.card .pips { font-size:20px }
+.controls { margin-left:auto; display:flex; gap:10px }
+.button { background:#b57b24; color:white; border-radius:6px; padding:10px 16px; cursor:pointer; border:0; font-weight:600 }
+.button.secondary { background:#8a6b16 }
+.chips { display:flex; gap:10px; margin:12px 0 }
+.chip { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; box-shadow:0 2px 4px rgba(0,0,0,0.3); background:#fff; color:#000 }
+.info-box { border:2px solid rgba(255,255,255,0.08); padding:10px 12px; border-radius:6px; min-width:120px }
+.small-text { font-size:12px; color:#f6e7b2 }
+.center { display:flex; flex-direction:column; align-items:center; gap:12px }
+.status { color:#f6e7b2; font-weight:700 }
+.controls-bottom { display:flex; gap:12px; margin-top:12px }
+.result { margin-top:8px; font-weight:700 }
+.flex-between { display:flex; justify-content:space-between; align-items:center }
+.bet-display { font-size:18px; font-weight:700 }
+</style>
+
+<div class="table">
+    <div class="flex-between header">
+        <div class="title">ONLINE CASINO — Blackjack</div>
+        <div class="row">
+            <div class="info-box">
+                <div class="small-text">Balance</div>
+                <div>@Balance €</div>
+            </div>
+            <div style="width:12px"></div>
+            <div class="info-box">
+                <div class="small-text">Bet</div>
+                <div>@CurrentBet €</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row" style="justify-content:space-between;">
+        <div style="flex:1">
+            <div class="small-text">Dealer</div>
+            <div class="card-stack">
+                @foreach(var c in DealerCards)
+                {
+                    var hidden = c.Hidden && !ShowDealerCards;
+                    <div class="card @(hidden?"small":"")" style="transform: translateY(@(hidden?"18px":"0"));">
+                        @if(hidden)
+                        {
+                            <div style="background:#333; height:100%; border-radius:6px;"></div>
+                        }
+                        else
+                        {
+                            <div class="pips">@c.DisplayTop</div>
+                            <div style="font-size:28px; text-align:center; margin-top:6px;">@c.Symbol</div>
+                            <div style="text-align:right">@c.DisplayBottom</div>
+                        }
+                    </div>
+                }
+            </div>
+            <div style="margin-top:8px">Dealer total: @DealerVisibleTotal</div>
+        </div>
+
+        <div style="flex:1; text-align:center">
+            <div class="center">
+                <div style="font-size:28px; font-weight:700; color:#f6e7b2">BLACKJACK PAYS 3 TO 2</div>
+                <div class="small-text">Dealer must stand on 17</div>
+                <div class="small-text">Insurance pays 2 to 1 (nicht implementiert)</div>
+            </div>
+        </div>
+
+        <div style="flex:1; text-align:right">
+            <div class="small-text">Player</div>
+            <div class="card-stack" style="justify-content:flex-end">
+                @foreach(var c in PlayerCards)
+                {
+                    <div class="card">
+                        <div class="pips">@c.DisplayTop</div>
+                        <div style="font-size:28px; text-align:center; margin-top:6px;">@c.Symbol</div>
+                        <div style="text-align:right">@c.DisplayBottom</div>
+                    </div>
+                }
+            </div>
+            <div style="margin-top:8px">Player total: @PlayerBestTotal</div>
+        </div>
+    </div>
+
+    <div class="chips">
+        @foreach(var s in new int[]{1,5,10,25,100})
+        {
+            <div class="chip" @onclick="(()=>SetBet(s))">@s</div>
+        }
+    </div>
+
+    <div class="controls-bottom">
+        <button class="button" @onclick="Deal" disabled="@(!CanDeal)">DEAL</button>
+        <button class="button secondary" @onclick="Hit" disabled="@(!CanHit)">HIT</button>
+        <button class="button secondary" @onclick="Stand" disabled="@(!CanStand)">STAND</button>
+
+        <div style="margin-left:12px" class="status">@StatusMessage</div>
+    </div>
+
+    <div class="result">@RoundResultMessage</div>
+</div>
+
+@code {
+    enum Rank { Two=2, Three=3, Four=4, Five=5, Six=6, Seven=7, Eight=8, Nine=9, Ten=10, Jack=11, Queen=12, King=13, Ace=1 }
+    enum Suit { Clubs, Diamonds, Hearts, Spades }
+
+    record Card(Rank Rank, Suit Suit)
+    {
+        public bool Hidden { get; init; } = false;
+        public string Symbol => Rank == Rank.Ace ? "A" : (Rank == Rank.Jack ? "J" : (Rank == Rank.Queen ? "Q" : (Rank == Rank.King ? "K" : ((int)Rank).ToString())));
+        public string DisplayTop => Symbol + GetSuitSymbol(Suit);
+        public string DisplayBottom => GetSuitSymbol(Suit) + Symbol;
+        public int Value => Rank == Rank.Ace ? 11 : Math.Min((int)Rank, 10);
+        static string GetSuitSymbol(Suit s) => s switch { Suit.Clubs => "♣", Suit.Diamonds => "♦", Suit.Hearts => "♥", Suit.Spades => "♠", _ => "" };
+    }
+
+    List<Card> Deck = new();
+    List<Card> PlayerCards = new();
+    List<Card> DealerCards = new();
+
+    Random rng = new();
+
+    int Balance { get; set; } = 1000;
+    int CurrentBet { get; set; } = 10;
+
+    bool InRound = false;
+    bool ShowDealerCards = false;
+
+    string StatusMessage = "";
+    string RoundResultMessage = "";
+
+    protected override void OnInitialized()
+    {
+        BuildDeck();
+        Shuffle();
+    }
+
+    void BuildDeck()
+    {
+        Deck.Clear();
+        foreach(Suit s in Enum.GetValues(typeof(Suit)))
+        foreach(Rank r in Enum.GetValues(typeof(Rank)))
+            Deck.Add(new Card(r,s));
+    }
+
+    void Shuffle()
+    {
+        for(int i=Deck.Count-1;i>0;i--)
+        {
+            int j = rng.Next(i+1);
+            var tmp = Deck[i]; Deck[i]=Deck[j]; Deck[j]=tmp;
+        }
+    }
+
+    Card Draw(bool hidden=false)
+    {
+        if(Deck.Count==0) { BuildDeck(); Shuffle(); }
+        var c = Deck[0]; Deck.RemoveAt(0);
+        return c with { Hidden = hidden };
+    }
+
+    bool CanDeal => !InRound && Balance >= CurrentBet;
+    bool CanHit => InRound && !RoundFinished && !PlayerBusted && !PlayerStood;
+    bool CanStand => InRound && !RoundFinished && !PlayerStood;
+
+    bool PlayerStood = false;
+    bool RoundFinished = false;
+
+    void SetBet(int amount)
+    {
+        if(InRound) return;
+        CurrentBet = amount;
+    }
+
+    void Deal()
+    {
+        RoundResultMessage = "";
+        StatusMessage = "";
+        InRound = true; PlayerStood = false; RoundFinished = false; ShowDealerCards=false;
+        PlayerCards.Clear(); DealerCards.Clear();
+        if(Balance < CurrentBet) { StatusMessage = "Nicht genug Guthaben"; InRound=false; return; }
+
+        Balance -= CurrentBet;
+
+        // Deal
+        PlayerCards.Add(Draw());
+        DealerCards.Add(Draw());
+        PlayerCards.Add(Draw());
+        DealerCards.Add(Draw(hidden:true)); // dealer second card hidden
+
+        // auto-check blackjack
+        if (IsBlackjack(PlayerCards) || IsBlackjack(DealerCards))
+        {
+            ShowDealerCards = true;
+            EvaluateRound();
+        }
+    }
+
+    void Hit()
+    {
+        if(!CanHit) return;
+        PlayerCards.Add(Draw());
+        if(PlayerBusted)
+        {
+            ShowDealerCards = true;
+            EvaluateRound();
+        }
+    }
+
+    void Stand()
+    {
+        if(!CanStand) return;
+        PlayerStood = true;
+        // reveal dealer's hole card
+        ShowDealerCards = true;
+        // play dealer
+        DealerPlay();
+        EvaluateRound();
+    }
+
+    int BestTotal(List<Card> hand)
+    {
+        int total = hand.Sum(c => c.Value);
+        int aces = hand.Count(c => c.Rank == Rank.Ace);
+        while(total>21 && aces>0)
+        {
+            total -= 10; // count one ace as 1 instead of 11
+            aces--;
+        }
+        return total;
+    }
+
+    bool PlayerBusted => BestTotal(PlayerCards)>21;
+    bool DealerBusted => BestTotal(DealerCards)>21;
+
+    int PlayerBestTotal => BestTotal(PlayerCards);
+    int DealerVisibleTotal =>
+        DealerCards == null || DealerCards.Count == 0
+            ? 0
+            : (ShowDealerCards ? BestTotal(DealerCards) : DealerCards.First().Value);
+
+    bool IsBlackjack(List<Card> hand) => hand.Count==2 && BestTotal(hand)==21;
+
+    void DealerPlay()
+    {
+        // reveal hidden
+        for(int i=0;i<DealerCards.Count;i++)
+            DealerCards[i] = DealerCards[i] with { Hidden=false };
+
+        // Dealer must hit until 17 or higher. Stand on soft 17 (Ace+6) -> as Figma text: "Dealer must stand on 17" so stand on soft 17 as well.
+        while(true)
+        {
+            var total = BestTotal(DealerCards);
+            if(total>=17) break;
+            DealerCards.Add(Draw());
+        }
+    }
+
+    void EvaluateRound()
+    {
+        RoundFinished = true; InRound=false;
+        ShowDealerCards = true;
+
+        var playerBJ = IsBlackjack(PlayerCards);
+        var dealerBJ = IsBlackjack(DealerCards);
+
+        if(playerBJ && dealerBJ)
+        {
+            // push
+            Balance += CurrentBet; // return bet
+            RoundResultMessage = "Push — beide Blackjack";
+            return;
+        }
+
+        if(playerBJ)
+        {
+            // player wins 3:2
+            int win = (int)Math.Round(CurrentBet * 1.5);
+            Balance += CurrentBet + win;
+            RoundResultMessage = $"Blackjack! Du gewinnst {win} €";
+            return;
+        }
+
+        if(dealerBJ)
+        {
+            RoundResultMessage = "Dealer hat Blackjack — du verlierst";
+            return;
+        }
+
+        if(PlayerBusted)
+        {
+            RoundResultMessage = "Du bist überkauft — verloren";
+            return;
+        }
+
+        if(DealerBusted)
+        {
+            // player wins even money
+            Balance += CurrentBet * 2;
+            RoundResultMessage = $"Dealer busted — Du gewinnst {CurrentBet} €";
+            return;
+        }
+
+        var p = PlayerBestTotal;
+        var d = BestTotal(DealerCards);
+
+        if(p> d)
+        {
+            Balance += CurrentBet * 2;
+            RoundResultMessage = $"Du gewinnst {CurrentBet} € (Score {p} vs {d})";
+        }
+        else if(p==d)
+        {
+            Balance += CurrentBet; // return
+            RoundResultMessage = $"Push (Score {p})";
+        }
+        else
+        {
+            RoundResultMessage = $"Dealer gewinnt (Score {d} vs {p})";
+        }
+    }
+}
