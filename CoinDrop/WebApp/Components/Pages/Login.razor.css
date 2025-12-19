@@ -1,0 +1,180 @@
+.auth-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #02160f; /* dunkles Grün */
+    font-family: "Times New Roman", Georgia, serif;
+}
+
+.auth-card {
+    width: 360px;
+    padding: 28px 26px 26px 26px;
+    border-radius: 8px;
+    border: 1px solid #d3a94a; /* Gold */
+    background: transparent;
+    box-shadow: 0 0 18px rgba(0, 0, 0, 0.7);
+    color: #f8e0a0;
+}
+
+.auth-title {
+    text-align: center;
+    font-size: 28px;
+    letter-spacing: 3px;
+    margin-bottom: 24px;
+    color: #f3ce66;
+    text-transform: uppercase;
+}
+
+.auth-tabs {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-bottom: 1px solid #d3a94a;
+    margin-bottom: 22px;
+    padding-bottom: 8px;
+}
+
+.auth-tab {
+    font-size: 14px;
+    padding: 0 18px;
+    color: #f3ce66;
+}
+
+/* klickbare Tab-Buttons (nicht aktiv) */
+.auth-tab-link {
+    background: transparent;
+    border: none;
+    color: #f3ce66;
+    cursor: pointer;
+    padding: 4px 18px;
+}
+
+/* aktiver Tab (dunkel umrandet) */
+.auth-tab-active {
+    padding: 4px 18px;
+    border-radius: 16px;
+    border: 1px solid #d3a94a;
+    background-color: #032017;
+    color: #f3ce66;
+    font-weight: 600;
+}
+
+.auth-tab-divider {
+    color: #d3a94a;
+    font-size: 14px;
+}
+
+.auth-form {
+    margin-top: 10px;
+}
+
+.auth-field {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 16px;
+}
+
+.auth-label {
+    font-size: 13px;
+    margin-bottom: 6px;
+    color: #f8e0a0;
+}
+
+/* Inputs jetzt dunkelgrün statt weiß */
+.auth-input {
+    height: 34px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #d3a94a;
+    background-color: #032217;   /* sattes Grün */
+    color: #f8e0a0;
+    font-size: 13px;
+    outline: none;
+}
+
+.auth-input::placeholder {
+    color: rgba(248, 224, 160, 0.6);
+}
+
+.auth-input:focus {
+    box-shadow: 0 0 0 1px #f3ce66;
+}
+
+.auth-buttons {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+}
+
+.btn-gold-filled,
+.btn-gold-outline {
+    flex: 1;
+    height: 38px;
+    font-size: 14px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+}
+
+.btn-gold-filled {
+    border: 1px solid #d3a94a;
+    background: linear-gradient(180deg, #f6d470, #d3a94a);
+    color: #1b1b1b;
+}
+
+.btn-gold-outline {
+    border: 1px solid #d3a94a;
+    background: transparent;
+    color: #f3ce66;
+}
+
+/* Social-Bereich zentrierter & cleaner */
+.auth-social {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.auth-social-text {
+    font-size: 12px;
+    margin-bottom: 10px;
+    color: rgba(248, 224, 160, 0.8);
+}
+
+.auth-social-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+
+/* „Passwort vergessen?“ auf Login-Seite */
+.auth-forgot-password {
+    margin-top: 8px;
+    text-align: right;
+}
+
+.auth-forgot-password a {
+    font-size: 12px;
+    color: #f3ce66;
+    text-decoration: none;
+}
+
+.auth-forgot-password a:hover {
+    text-decoration: underline;
+}
+
+/* einfache Fehlermeldung / Erfolg */
+.auth-error {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #ff6b6b;
+    white-space: pre-line;
+}
+
+.auth-success {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #7fd87f;
+    white-space: pre-line;
+}

@@ -1,12 +1,13 @@
-@page "/register"
+@page "/login"
 @rendermode InteractiveServer
 
 @using CoinDrop.services.dtos
 @using CoinDrop.services.interfaces
 @inject IUserService UserService
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JS
 
-<EditForm Model="@registerModel" OnValidSubmit="@OnRegisterAsync">
+<EditForm Model="@loginModel" OnValidSubmit="@OnLoginAsync">
     <DataAnnotationsValidator />
     <ValidationSummary />
 
@@ -15,39 +16,29 @@
             <div class="auth-title">COINDROP</div>
 
             <div class="auth-tabs">
+                <div class="auth-tab auth-tab-active">
+                    LOGIN
+                </div>
+                <div class="auth-tab-divider">|</div>
                 <button type="button"
                         class="auth-tab auth-tab-link"
-                        @onclick="@(() => NavigationManager.NavigateTo("/login"))">
-                    LOGIN
-                </button>
-                <div class="auth-tab-divider">|</div>
-                <div class="auth-tab auth-tab-active">
+                        @onclick="@(() => NavigationManager.NavigateTo("/register"))">
                     REGISTER
-                </div>
+                </button>
             </div>
 
             <div class="auth-form">
                 <div class="auth-field">
-                    <label class="auth-label">Username</label>
+                    <label class="auth-label">Username oder Email</label>
                     <InputText class="auth-input"
-                               @bind-Value="registerModel.UserName" />
-                    <ValidationMessage For="@(() => registerModel.UserName)" />
-                </div>
-
-                <div class="auth-field">
-                    <label class="auth-label">Email</label>
-                    <InputText class="auth-input"
-                               type="email"
-                               @bind-Value="registerModel.Email" />
-                    <ValidationMessage For="@(() => registerModel.Email)" />
+                               @bind-Value="loginModel.UserNameOrEmail" />
                 </div>
 
                 <div class="auth-field">
                     <label class="auth-label">Password</label>
                     <InputText class="auth-input"
                                type="password"
-                               @bind-Value="registerModel.Password" />
-                    <ValidationMessage For="@(() => registerModel.Password)" />
+                               @bind-Value="loginModel.Password" />
                 </div>
 
                 @if (!string.IsNullOrEmpty(errorMessage))
@@ -55,19 +46,18 @@
                     <div class="auth-error">@errorMessage</div>
                 }
 
-                @if (!string.IsNullOrEmpty(successMessage))
-                {
-                    <div class="auth-success">@successMessage</div>
-                }
-
                 <div class="auth-buttons">
-                    <button type="submit" class="btn-gold-outline">
-                        REGISTER
+                    <button type="submit" class="btn-gold-filled">
+                        LOGIN
                     </button>
                 </div>
 
+                <div class="auth-forgot-password">
+                    <a href="#">Passwort vergessen?</a>
+                </div>
+
                 <div class="auth-social">
-                    <p class="auth-social-text">oder registrieren mit</p>
+                    <p class="auth-social-text">oder anmelden mit</p>
                     <div class="auth-social-buttons">
                         <button type="button"
                                 class="btn-gold-outline"
@@ -87,24 +77,29 @@
 </EditForm>
 
 @code {
-    private RegisterRequest registerModel = new();
+    private LoginRequest loginModel = new();
     private string? errorMessage;
-    private string? successMessage;
 
-    private async Task OnRegisterAsync()
+    private async Task OnLoginAsync()
     {
         errorMessage = null;
-        successMessage = null;
 
-        var result = await UserService.RegisterAsync(registerModel);
+        var result = await UserService.LoginAsync(loginModel);
 
         if (!result.Succeeded)
         {
-            errorMessage = string.Join(Environment.NewLine,
-                result.Errors.Select(e => e.Description));
+            errorMessage = "Benutzername/E-Mail oder Passwort ist ungültig.";
             return;
         }
 
-        successMessage = "Registrierung erfolgreich. Bitte überprüfe deine E-Mails und bestätige dein Konto.";
+        // Jetzt echter Login via HTTP-Endpoint
+        var form = new Dictionary<string, object>
+        {
+            { "u", loginModel.UserNameOrEmail },
+            { "p", loginModel.Password },
+            { "rememberMe", "false" } // oder später aus Checkbox
+        };
+
+        await JS.InvokeVoidAsync("postRedirect", "/auth/password-login", form);
     }
 }

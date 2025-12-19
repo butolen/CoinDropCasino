@@ -1,29 +1,125 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">WebApp</a>
-    </div>
-</div>
+﻿@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@implements IDisposable
+@rendermode InteractiveServer
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler"/>
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
+<nav class="casino-navbar">
+    @if (IsAdmin)
+    {
+        <div class="admin-navbar-left">
+            <span class="admin-title">ADMIN PANEL</span>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
+        <div class="admin-navbar-center">
+            <NavLink href="/admin/dashboard" class="nav-link" activeClass="nav-link-active">Dashboard</NavLink>
+            <NavLink href="/admin/users" class="nav-link" activeClass="nav-link-active">Users</NavLink>
+            <NavLink href="/admin/settings" class="nav-link" activeClass="nav-link-active">Settings</NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
+        <div class="admin-navbar-right">
+            <button class="btn-nav btn-logout" @onclick="Logout">LOGOUT</button>
         </div>
-    </nav>
-</div>
+    }
+    else
+    {
+        <div class="navbar-left" @onclick="@(() => Nav.NavigateTo("/"))">
+            <img src="images/logo.png" alt="Online Casino Logo" class="navbar-logo-img" />
+        </div>
+
+        <div class="navbar-center">
+            <NavLink href="/" class="nav-link" activeClass="nav-link-active">Home</NavLink>
+            <NavLink href="/about" class="nav-link" activeClass="nav-link-active">About</NavLink>
+            <NavLink href="/roulette" class="nav-link" activeClass="nav-link-active">Roulette</NavLink>
+            <NavLink href="/blackjack" class="nav-link" activeClass="nav-link-active">Blackjack</NavLink>
+
+            @if (IsCustomer)
+            {
+                <NavLink href="/history" class="nav-link" activeClass="nav-link-active">History</NavLink>
+            }
+        </div>
+
+        <div class="navbar-right">
+            @if (!IsAuthenticated)
+            {
+                <button class="btn-nav btn-login"
+                        @onclick='() => Nav.NavigateTo("/login")'>
+                    LOG IN
+                </button>
+
+                <button class="btn-nav btn-register"
+                        @onclick='() => Nav.NavigateTo("/register")'>
+                    REGISTER
+                </button>
+            }
+            else
+            {
+                <!-- SETTINGS -->
+                <a href="/settings" class="user-icon-link" title="Settings">
+                    <span class="user-icon">
+                        <i class="user-circle"></i>
+                    </span>
+                </a>
+
+                <!-- DEPOSIT -->
+                <button class="btn-nav btn-deposit"
+                        @onclick='() => Nav.NavigateTo("/deposit-crypto")'>
+                    DEPOSIT
+                </button>
+
+                <!-- LOGOUT -->
+                <button class="btn-nav btn-logout"
+                        @onclick="Logout">
+                    LOGOUT
+                </button>
+            }
+        </div>
+    }
+</nav>
+
+@code {
+    private const string RoleCustomer = "customer";
+    private const string RoleAdmin = "admin";
+
+    private bool IsAuthenticated;
+    private bool IsCustomer;
+    private bool IsAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthStateProvider.AuthenticationStateChanged += OnAuthenticationStateChanged;
+        await UpdateAuthAsync();
+    }
+
+    private async Task UpdateAuthAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+
+        IsAuthenticated = user.Identity?.IsAuthenticated ?? false;
+        IsCustomer = IsAuthenticated && user.IsInRole(RoleCustomer);
+        IsAdmin = IsAuthenticated && user.IsInRole(RoleAdmin);
+    }
+
+    private async void OnAuthenticationStateChanged(Task<AuthenticationState> task)
+    {
+        var state = await task;
+        var user = state.User;
+
+        IsAuthenticated = user.Identity?.IsAuthenticated ?? false;
+        IsCustomer = IsAuthenticated && user.IsInRole(RoleCustomer);
+        IsAdmin = IsAuthenticated && user.IsInRole(RoleAdmin);
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void Logout()
+    {
+        Nav.NavigateTo("/logout", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        AuthStateProvider.AuthenticationStateChanged -= OnAuthenticationStateChanged;
+    }
+}

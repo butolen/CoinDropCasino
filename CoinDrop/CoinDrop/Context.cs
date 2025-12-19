@@ -71,8 +71,7 @@ public class CoinDropContext
 
         // --- Enum-Konvertierungen (Strings in DB) ---
         b.Entity<Transaction>().Property(t => t.Type).HasConversion<string>();
-        b.Entity<Transaction>().Property(t => t.SourceBalance).HasConversion<string>();
-        b.Entity<CryptoDeposit>().Property(c => c.Status).HasConversion<string>();
+       
         b.Entity<GameSession>().Property(g => g.GameType).HasConversion<string>();
         b.Entity<GameSession>().Property(g => g.Result).HasConversion<string>();
         b.Entity<Withdrawal>().Property(w => w.Status).HasConversion<string>();

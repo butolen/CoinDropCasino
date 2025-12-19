@@ -1,0 +1,40 @@
+@page "/deposit-phys"
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+<div class="deposit-page">
+    <div class="deposit-card">
+        <div class="deposit-title">Deposit</div>
+
+        <div class="deposit-tabs">
+            <a class="tab active" href="/deposit-phys">Physical</a>
+            <a class="tab" href="/deposit-crypto">Crypto</a>
+        </div>
+
+        <input class="deposit-input"
+               inputmode="decimal"
+               @bind="AmountText"
+               placeholder="0.00€" />
+
+        <div class="session-code">Session-Code: <span>@SessionCode</span></div>
+
+        <div class="deposit-actions">
+            <button class="btn-primary" @onclick="OnDeposit">DEPOSIT</button>
+            <button class="btn-secondary" @onclick="OnCancel">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string AmountText = "15.50€";
+    private int SessionCode = 8362;
+
+    private void OnDeposit()
+    {
+        // TODO: hier dein physischer Deposit Flow
+    }
+
+    private void OnCancel()
+    {
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+}

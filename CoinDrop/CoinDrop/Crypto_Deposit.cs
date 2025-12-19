@@ -30,6 +30,10 @@ public class CryptoDeposit
     [Column("deposit_address", TypeName = "varchar(100)")]
     public string DepositAddress { get; set; } = string.Empty;
 
+    [Column("src_address", TypeName = "varchar(100)")]
+    public string SourceAddress { get; set; } = string.Empty;
+
+    
     [Column("asset", TypeName = "varchar(50)")]
     [DefaultValue("SOL")]
     public string Asset { get; set; } = "SOL";
@@ -37,16 +41,19 @@ public class CryptoDeposit
     [Column("amount", TypeName = "double")]
     public double Amount { get; set; }
 
+    [Column("usd_amount", TypeName = "double")]
+    public double UsdAmount { get; set; }
+    
     [Column("txhash", TypeName = "varchar(150)")]
     public string TxHash { get; set; } = string.Empty;
-
+/*
     [Column("confirmations", TypeName = "int")]
     [DefaultValue(1)]
     public int Confirmations { get; set; } = 1;
 
     [Column("status", TypeName = "varchar(20)")]
     public DepositStatus Status { get; set; } = DepositStatus.Pending;
-
+*/
     [Column("timestamp", TypeName = "datetime")]
     [DatabaseGenerated(DatabaseGeneratedOption.Computed)]
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
