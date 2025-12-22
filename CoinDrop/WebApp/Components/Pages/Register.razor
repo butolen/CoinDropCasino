@@ -1,0 +1,110 @@
+@page "/register"
+@rendermode InteractiveServer
+
+@using CoinDrop.services.dtos
+@using CoinDrop.services.interfaces
+@inject IUserService UserService
+@inject NavigationManager NavigationManager
+
+<EditForm Model="@registerModel" OnValidSubmit="@OnRegisterAsync">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="auth-page">
+        <div class="auth-card">
+            <div class="auth-title">COINDROP</div>
+
+            <div class="auth-tabs">
+                <button type="button"
+                        class="auth-tab auth-tab-link"
+                        @onclick="@(() => NavigationManager.NavigateTo("/login"))">
+                    LOGIN
+                </button>
+                <div class="auth-tab-divider">|</div>
+                <div class="auth-tab auth-tab-active">
+                    REGISTER
+                </div>
+            </div>
+
+            <div class="auth-form">
+                <div class="auth-field">
+                    <label class="auth-label">Username</label>
+                    <InputText class="auth-input"
+                               @bind-Value="registerModel.UserName" />
+                    <ValidationMessage For="@(() => registerModel.UserName)" />
+                </div>
+
+                <div class="auth-field">
+                    <label class="auth-label">Email</label>
+                    <InputText class="auth-input"
+                               type="email"
+                               @bind-Value="registerModel.Email" />
+                    <ValidationMessage For="@(() => registerModel.Email)" />
+                </div>
+
+                <div class="auth-field">
+                    <label class="auth-label">Password</label>
+                    <InputText class="auth-input"
+                               type="password"
+                               @bind-Value="registerModel.Password" />
+                    <ValidationMessage For="@(() => registerModel.Password)" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="auth-error">@errorMessage</div>
+                }
+
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div class="auth-success">@successMessage</div>
+                }
+
+                <div class="auth-buttons">
+                    <button type="submit" class="btn-gold-outline">
+                        REGISTER
+                    </button>
+                </div>
+
+                <div class="auth-social">
+                    <p class="auth-social-text">oder registrieren mit</p>
+                    <div class="auth-social-buttons">
+                        <button type="button"
+                                class="btn-gold-outline"
+                                @onclick="@(() => NavigationManager.NavigateTo("/external-login?provider=Google&returnUrl=/"))">
+                            GOOGLE
+                        </button>
+                        <button type="button"
+                                class="btn-gold-outline"
+                                @onclick="@(() => NavigationManager.NavigateTo("/external-login?provider=Microsoft&returnUrl=/"))">
+                            MICROSOFT
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</EditForm>
+
+@code {
+    private RegisterRequest registerModel = new();
+    private string? errorMessage;
+    private string? successMessage;
+
+    private async Task OnRegisterAsync()
+    {
+        errorMessage = null;
+        successMessage = null;
+
+        var result = await UserService.RegisterAsync(registerModel);
+
+        if (!result.Succeeded)
+        {
+            errorMessage = string.Join(Environment.NewLine,
+                result.Errors.Select(e => e.Description));
+            return;
+        }
+
+        successMessage = "Registrierung erfolgreich. Bitte überprüfe deine E-Mails und bestätige dein Konto.";
+    }
+}

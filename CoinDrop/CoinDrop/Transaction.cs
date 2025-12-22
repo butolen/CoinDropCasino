@@ -3,11 +3,7 @@ namespace CoinDrop;
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-public enum SourceBalanceType
-{
-    Physical,
-    Crypto
-}
+
 public enum TransactionType
 {
     DepositPhysical,
@@ -25,19 +21,10 @@ public class Transaction
     [Column("user_id")]
     public int UserId { get; set; }
 
-    [Column("type", TypeName = "varchar(30)")]
-    [Required]
-    public TransactionType Type { get; set; }
-
-    [Column("source_balance", TypeName = "varchar(20)")]
-    [Required]
-    public SourceBalanceType SourceBalance { get; set; } 
-    
-    [Column("amount", TypeName = "double")]
-    public double Amount { get; set; }
-
-    [Column("txhash", TypeName = "varchar(150)")]
-    public string? TxHash { get; set; }
+  
+  
+    [Column("eur_amount", TypeName = "double")]
+    public double EurAmount { get; set; }
 
     [Column("timestamp", TypeName = "datetime")]
     [DatabaseGenerated(DatabaseGeneratedOption.Computed)]

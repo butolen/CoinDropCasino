@@ -1,0 +1,76 @@
+@page "/deposit-crypto"
+@using CoinDrop
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject NavigationManager Nav
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<div class="deposit-page">
+    <div class="deposit-card">
+        <div class="deposit-title">Deposit</div>
+
+        <div class="deposit-tabs">
+            <a class="tab" href="/deposit-phys">Physical</a>
+            <a class="tab active" href="/deposit-crypto">Crypto</a>
+        </div>
+
+        <label class="deposit-label">Network</label>
+        <select class="deposit-select" @bind="SelectedNetwork">
+            <option value="SOL">SOL</option>
+        </select>
+
+        @if (ShowWallet)
+        {
+            <div class="wallet-box">
+                <div class="wallet-label">Wallet Address</div>
+                <div class="wallet-address">@WalletAddress</div>
+            </div>
+        }
+
+        <div class="deposit-actions">
+            <button class="btn-primary" @onclick="OnDeposit">DEPOSIT</button>
+            <button class="btn-secondary" @onclick="OnCancel">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string SelectedNetwork = "SOL";
+    private bool ShowWallet = false;
+
+    // Platzhalter: später per Service/DB generieren
+    private string WalletAddress = "9xQeWvG816bUx9EPf6LkQw2HkV4mWqGQ8mJ8W2kZ9kYp";
+
+    private async Task OnDeposit()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync()   ;
+        var principal = authState.User;
+
+        if (principal.Identity?.IsAuthenticated != true)
+        {
+            // nicht eingeloggt → Login
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        var user = await UserManager.GetUserAsync(principal);
+        if (user == null || string.IsNullOrWhiteSpace(user.DepositAddress))
+        {
+            // sollte eigentlich nie passieren, aber besser als NullReference-Hölle
+            WalletAddress = "No deposit address assigned.";
+        }
+        else
+        {
+            WalletAddress = user.DepositAddress;
+        }
+
+        ShowWallet = true;
+    }
+
+    private void OnCancel()
+    {
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+}

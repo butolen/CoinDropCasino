@@ -1,25 +1,26 @@
-
 using CoinDrop;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
-public class CoinDropContext
-    : IdentityDbContext<ApplicationUser, IdentityRole<int>, int>
+public class CoinDropContext : IdentityDbContext<ApplicationUser, IdentityRole<int>, int>
 {
     public CoinDropContext(DbContextOptions<CoinDropContext> options) : base(options) { }
 
     public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
+
+    // TPT Root + Derived
     public DbSet<Transaction> Transactions => Set<Transaction>();
-    public DbSet<GameSession> GameSessions => Set<GameSession>();
-    public DbSet<HardwareDeposit> HardwareDeposits => Set<HardwareDeposit>();
     public DbSet<CryptoDeposit> CryptoDeposits => Set<CryptoDeposit>();
+    public DbSet<HardwareDeposit> PhysicalDeposits => Set<HardwareDeposit>();
     public DbSet<Withdrawal> Withdrawals => Set<Withdrawal>();
+
+    public DbSet<GameSession> GameSessions => Set<GameSession>();
     public DbSet<Log> Logs => Set<Log>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
-        // Wichtig: erst die Identity-Basis mappen lassen
+        // Wichtig: Identity zuerst
         base.OnModelCreating(b);
 
         // ---------- Identity-Tabellen auf lowercase ----------
@@ -31,7 +32,7 @@ public class CoinDropContext
         b.Entity<IdentityUserToken<int>>().ToTable("user_token");
         b.Entity<IdentityRoleClaim<int>>().ToTable("role_claim");
 
-        // --- Beziehungen ApplicationUser ---
+        // ---------- Beziehungen ApplicationUser ----------
         b.Entity<ApplicationUser>()
             .HasMany(u => u.Transactions)
             .WithOne(t => t.User)
@@ -44,39 +45,36 @@ public class CoinDropContext
             .HasForeignKey(g => g.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        b.Entity<ApplicationUser>()
-            .HasMany(u => u.HardwareDeposits)
-            .WithOne(h => h.User)
-            .HasForeignKey(h => h.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        b.Entity<ApplicationUser>()
-            .HasMany(u => u.CryptoDeposits)
-            .WithOne(c => c.User)
-            .HasForeignKey(c => c.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        b.Entity<ApplicationUser>()
-            .HasMany(u => u.WithdrawalRequests)
-            .WithOne(w => w.User)
-            .HasForeignKey(w => w.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        // Log optional (User kann null sein)
+        // Log optional
         b.Entity<Log>()
             .HasOne(l => l.User)
             .WithMany()
             .HasForeignKey(l => l.UserId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // --- Enum-Konvertierungen (Strings in DB) ---
-        b.Entity<Transaction>().Property(t => t.Type).HasConversion<string>();
-        b.Entity<Transaction>().Property(t => t.SourceBalance).HasConversion<string>();
-        b.Entity<CryptoDeposit>().Property(c => c.Status).HasConversion<string>();
+        // ---------- TPT Mapping ----------
+        // Base table
+        b.Entity<Transaction>()
+            .ToTable("transaction");
+
+        // Derived tables (TPT)
+        b.Entity<CryptoDeposit>()
+            .ToTable("crypto_deposit");
+
+        b.Entity<HardwareDeposit>()
+            .ToTable("physical_deposit");
+
+        b.Entity<Withdrawal>()
+            .ToTable("withdrawal_request");
+
+        // Optional: Enum-Konvertierungen (wenn du Strings willst)
         b.Entity<GameSession>().Property(g => g.GameType).HasConversion<string>();
         b.Entity<GameSession>().Property(g => g.Result).HasConversion<string>();
         b.Entity<Withdrawal>().Property(w => w.Status).HasConversion<string>();
         b.Entity<Log>().Property(l => l.ActionType).HasConversion<string>();
         b.Entity<Log>().Property(l => l.UserType).HasConversion<string>();
+
+        // Optional: wenn TransactionType wieder rein soll (empfohlen für Auswertungen)
+        // b.Entity<Transaction>().Property(t => t.TransactionType).HasConversion<string>();
     }
 }
