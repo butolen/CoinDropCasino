@@ -45,7 +45,7 @@
 
     private async Task OnDeposit()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync()   ;
         var principal = authState.User;
 
         if (principal.Identity?.IsAuthenticated != true)

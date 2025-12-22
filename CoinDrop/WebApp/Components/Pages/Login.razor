@@ -79,7 +79,14 @@
 @code {
     private LoginRequest loginModel = new();
     private string? errorMessage;
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(NavigationManager.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
 
+        if (query["e"] == "1")
+            errorMessage = "Benutzername/E-Mail oder Passwort ist ungültig.";
+    }
     private async Task OnLoginAsync()
     {
         errorMessage = null;

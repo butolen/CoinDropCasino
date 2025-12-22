@@ -22,11 +22,11 @@ public class ApplicationUser : IdentityUser<int>
 
     [Column("profileimage", TypeName = "varchar(255)")]
     public string? ProfileImage { get; set; }
-
-    [Column("issuspended")]
+/*
+    [Column("issuspended")] -- ist in if vorhandne 
     [DefaultValue(false)]
     public bool IsSuspended { get; set; } = false;
-
+*/  
     [Column("depositaddress", TypeName = "varchar(100)")]
     public string? DepositAddress { get; set; }
 
@@ -39,7 +39,5 @@ public class ApplicationUser : IdentityUser<int>
 
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
     public ICollection<GameSession> GameSessions { get; set; } = new List<GameSession>();
-    public ICollection<HardwareDeposit> HardwareDeposits { get; set; } = new List<HardwareDeposit>();
-    public ICollection<CryptoDeposit> CryptoDeposits { get; set; } = new List<CryptoDeposit>();
-    public ICollection<Withdrawal> WithdrawalRequests { get; set; } = new List<Withdrawal>();
+
 }

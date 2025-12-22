@@ -137,41 +137,25 @@ public static class AuthEndpoints
 
             var userNameOrEmail = form["u"].ToString();
             var password        = form["p"].ToString();
-            var rememberRaw     = form["rememberMe"].ToString();
+            var rememberMe      = bool.TryParse(form["rememberMe"].ToString(), out var r) && r;
 
-            var rememberMe = bool.TryParse(rememberRaw, out var r) && r;
+            // Immer generisch bleiben:
+            if (string.IsNullOrWhiteSpace(userNameOrEmail) || string.IsNullOrWhiteSpace(password))
+                return Results.Redirect("/login?e=1");
 
-            if (string.IsNullOrWhiteSpace(userNameOrEmail) ||
-                string.IsNullOrWhiteSpace(password))
-            {
-                return Results.BadRequest("Missing credentials");
-            }
+            ApplicationUser? user = await userManager.FindByNameAsync(userNameOrEmail)
+                                    ?? await userManager.FindByEmailAsync(userNameOrEmail);
 
-            ApplicationUser? user = await userManager.FindByNameAsync(userNameOrEmail);
+            // User nicht gefunden -> generisch
             if (user == null)
-            {
-                user = await userManager.FindByEmailAsync(userNameOrEmail);
-            }
-
-            if (user == null)
-            {
-                return Results.BadRequest("Unknown user");
-            }
+                return Results.Redirect("/login?e=1");
 
             var result = await signInManager.PasswordSignInAsync(
-                user,
-                password,
-                rememberMe,
-                lockoutOnFailure: false);
-            Console.WriteLine(result.IsNotAllowed);
-            Console.WriteLine(result.RequiresTwoFactor);
-            Console.WriteLine(result.IsLockedOut);
-            Console.WriteLine(result.IsNotAllowed);
-            Console.WriteLine(result.ToString());
+                user, password, rememberMe, lockoutOnFailure: false);
+
+            // Unconfirmed Email landet hier i.d.R. als IsNotAllowed
             if (!result.Succeeded)
-            {
-                return Results.BadRequest("Login failed");
-            }
+                return Results.Redirect("/login?e=1");
 
             return Results.Redirect("/");
         });

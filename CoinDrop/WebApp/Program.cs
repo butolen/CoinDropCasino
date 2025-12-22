@@ -7,7 +7,7 @@ using Domain;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using WebApp.Components;
-using WebApp.Data;
+
 using Microsoft.EntityFrameworkCore;
 using WebApp.Endpoints;
 
@@ -84,8 +84,8 @@ builder.Services.AddScoped<ISolanService,SolanaWalletService>();
 //crypto
 builder.Services.Configure<CryptoConfig>(
     builder.Configuration.GetSection("Crypto"));
-builder.Services.AddHostedService<SolBalanceScanner>();
-
+builder.Services.AddScoped<SolBalanceScannerJob>();
+builder.Services.AddHostedService<CoinDrop.services.SolBalanceScannerHosted>();
 builder.Services.AddHttpContextAccessor();
 var app = builder.Build();
 

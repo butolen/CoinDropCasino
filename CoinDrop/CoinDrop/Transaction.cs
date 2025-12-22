@@ -21,14 +21,10 @@ public class Transaction
     [Column("user_id")]
     public int UserId { get; set; }
 
-    [Column("type", TypeName = "varchar(30)")]
-    [Required]
-    public TransactionType Type { get; set; }
-
   
-    [Column("amount", TypeName = "double")]
-    public double Amount { get; set; }
-
+  
+    [Column("eur_amount", TypeName = "double")]
+    public double EurAmount { get; set; }
 
     [Column("timestamp", TypeName = "datetime")]
     [DatabaseGenerated(DatabaseGeneratedOption.Computed)]
