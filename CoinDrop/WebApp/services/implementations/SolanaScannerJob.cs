@@ -7,6 +7,7 @@ using Solnet.Rpc;
 using Solnet.Rpc.Builders;
 using Solnet.Rpc.Types;
 using Solnet.Wallet;
+using System.Net.Http.Json;
 
 namespace CoinDrop.services;
 
@@ -26,6 +27,12 @@ public sealed class SolBalanceScannerJob
 
     // Sweep-Trigger: wie bei dir (>= 0.01 SOL)
     private const ulong MinTriggerLamports = 10_000_000UL;
+
+    // CoinGecko: Public (ohne API-Key)
+    private static readonly HttpClient _http = new HttpClient
+    {
+        Timeout = TimeSpan.FromSeconds(10)
+    };
 
     public SolBalanceScannerJob(
         IDbContextFactory<CoinDropContext> dbFactory,
@@ -117,8 +124,7 @@ public sealed class SolBalanceScannerJob
         if (sweep == null)
             return;
 
-        // 6) Deposit Amount speichern:
-        // SourceAddress = echte Senderwallet, Amount = inboundLamports - FeeReserve (wie bisher "abziehen")
+        // 6) Deposit Amount berechnen (wie vorher)
         ulong grossLamports = inbound.Value.InboundLamports;
 
         ulong netLamports = grossLamports > FeeReserveLamports
@@ -127,31 +133,54 @@ public sealed class SolBalanceScannerJob
 
         double netSol = netLamports / 1_000_000_000d;
 
+        // ✅ 6.1) CoinGecko Preis (SOL->EUR) holen (ohne API key)
+        double? solPriceEur = await GetSolPriceEurAsync(ct);
+
+        // ✅ 6.2) EUR Amount berechnen (BalanceCrypto soll EUR sein)
+        double eurAmount = (solPriceEur.HasValue && solPriceEur.Value > 0.0)
+            ? netSol * solPriceEur.Value
+            : 0.0;
+
         // 7) Persist: CryptoDeposit (TPT -> transaction + crypto_deposit)
         var deposit = new CryptoDeposit
         {
             UserId = userId,
 
             // Base Transaction
-            EurAmount = 0.0, // optional später via price feed
+            EurAmount = eurAmount,
             Timestamp = DateTime.UtcNow,
             Details =
                 $"InboundSig={inbound.Value.InboundSignature}; " +
                 $"SweepSig={sweep.Value.SweepSignature}; " +
                 $"grossLamports={grossLamports}; netLamports={netLamports}; " +
                 $"feeReserveLamports={FeeReserveLamports}; " +
-                $"treasury={_cfg.TreasuryAddress}",
+                $"treasury={_cfg.TreasuryAddress}; " +
+                $"solPriceEur={(solPriceEur?.ToString() ?? "null")}",
 
             // Child CryptoDeposit
             Network = "Solana",
             DepositAddress = depositAddress,
-            SourceAddress = inbound.Value.SourceAddress, // ✅ echte Senderwallet
+            SourceAddress = inbound.Value.SourceAddress, // echte Senderwallet
             Asset = "SOL",
             Amount = netSol,
-            TxHash = inbound.Value.InboundSignature       // ✅ Deposit TxHash
+            TxHash = inbound.Value.InboundSignature       // Deposit TxHash
         };
 
         await _cDepositRepo.AddAsync(deposit, ct);
+
+        // ✅ 7.1) User-Balance updaten (user.balancecrypto += eurAmount)
+        // Extra DbContext, tracked Entity
+        if (eurAmount > 0.0)
+        {
+            await using var db2 = await _dbFactory.CreateDbContextAsync(ct);
+            var dbUser = await db2.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+
+            if (dbUser != null)
+            {
+                dbUser.BalanceCrypto += eurAmount;
+                await db2.SaveChangesAsync(ct);
+            }
+        }
 
         // 8) Log
         var log = new Log
@@ -160,7 +189,7 @@ public sealed class SolBalanceScannerJob
             UserType = LogUserType.User,
             UserId = userId,
             Description =
-                "SOL deposit detected, swept to treasury (fees paid by treasury), and persisted. " +
+                "SOL deposit detected, swept to treasury (fees paid by treasury), persisted, and user balance updated. " +
                 $"userId={userId}; " +
                 $"cluster={_cfg.Cluster}; " +
                 $"depositAddress={depositAddress}; " +
@@ -169,6 +198,8 @@ public sealed class SolBalanceScannerJob
                 $"grossLamports={grossLamports}; " +
                 $"netLamports={netLamports}; " +
                 $"netSol={netSol}; " +
+                $"solPriceEur={(solPriceEur?.ToString() ?? "null")}; " +
+                $"eurAmount={eurAmount}; " +
                 $"feeReserveLamports={FeeReserveLamports}; " +
                 $"inboundSig={inbound.Value.InboundSignature}; " +
                 $"sweepSig={sweep.Value.SweepSignature}; " +
@@ -178,7 +209,9 @@ public sealed class SolBalanceScannerJob
 
         await _logRepo.AddAsync(log, ct);
 
-        Console.WriteLine($"[DEPOSIT_OK] userId={userId} netSol={netSol} inbound={inbound.Value.InboundSignature} sweep={sweep.Value.SweepSignature}");
+        Console.WriteLine(
+            $"[DEPOSIT_OK] userId={userId} netSol={netSol} eurAmount={eurAmount} " +
+            $"inbound={inbound.Value.InboundSignature} sweep={sweep.Value.SweepSignature}");
     }
 
     private Account GetDepositAccountFromUserId(int userId)
@@ -222,7 +255,7 @@ public sealed class SolBalanceScannerJob
         if (balanceLamports <= rentMin + FeeReserveLamports)
             return null;
 
-        // NET Sweep (wie vorher: rent + reserve abziehen)
+        // NET Sweep
         ulong sweepLamports = balanceLamports - rentMin - FeeReserveLamports;
 
         var bh = await rpc.GetLatestBlockHashAsync(Commitment.Finalized);
@@ -233,12 +266,11 @@ public sealed class SolBalanceScannerJob
 
         var tx = new TransactionBuilder()
             .SetRecentBlockHash(bh.Result.Value.Blockhash)
-            .SetFeePayer(treasuryAccount) // ✅ Treasury zahlt Fee
+            .SetFeePayer(treasuryAccount) // Treasury zahlt Fee
             .AddInstruction(SystemProgram.Transfer(
                 fromPublicKey: depositAccount.PublicKey,
                 toPublicKey: treasuryPubKey,
                 lamports: sweepLamports))
-            // ✅ beide müssen signen: Fee payer + from
             .Build(new List<Account> { treasuryAccount, depositAccount });
 
         var sendRes = await rpc.SendTransactionAsync(tx, skipPreflight: false, Commitment.Finalized);
@@ -275,9 +307,8 @@ public sealed class SolBalanceScannerJob
             if (meta?.PreBalances == null || meta.PostBalances == null)
                 continue;
 
-            // AccountKeys: kein List<string> -> robust per for-loop
             int depositIndex = -1;
-            int keyCount = msg.AccountKeys.Length; // funktioniert in aktuellen Solnet Builds
+            int keyCount = msg.AccountKeys.Length;
 
             for (int i = 0; i < keyCount; i++)
             {
@@ -358,5 +389,26 @@ public sealed class SolBalanceScannerJob
         }
 
         return false;
+    }
+
+    // ✅ CoinGecko Public Price: SOL → EUR (ohne API Key)
+    private static async Task<double?> GetSolPriceEurAsync(CancellationToken ct)
+    {
+        const string url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=eur";
+
+        using var res = await _http.GetAsync(url, ct);
+        if (!res.IsSuccessStatusCode)
+            return null;
+
+        var json = await res.Content.ReadFromJsonAsync<Dictionary<string, Dictionary<string, double>>>(cancellationToken: ct);
+        if (json == null)
+            return null;
+
+        if (!json.TryGetValue("solana", out var inner))
+            return null;
+
+        return inner.TryGetValue("eur", out var price)
+            ? price
+            : null;
     }
 }

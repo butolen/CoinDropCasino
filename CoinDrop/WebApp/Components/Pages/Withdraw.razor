@@ -1,0 +1,201 @@
+@page "/withdraw-crypto"
+@using CoinDrop
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@using WebApp.services.implementations
+@inject NavigationManager Nav
+@inject WithdrawlService WithdrawlService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<div class="withdraw-page">
+    <div class="withdraw-card">
+        <div class="withdraw-title">Withdraw</div>
+
+        <label class="withdraw-label">Network</label>
+        <select class="withdraw-select" @bind="SelectedNetwork" disabled="@IsBusy">
+            <option value="SOL">SOL</option>
+        </select>
+
+        <label class="withdraw-label">Withdrawal Address</label>
+        <input class="withdraw-input"
+               placeholder="Destination wallet address"
+               @bind="WithdrawalAddress"
+               disabled="@IsBusy" />
+
+        <div class="withdraw-hint">
+            Make sure the address is on the selected network.
+        </div>
+
+        <label class="withdraw-label">Amount (SOL)</label>
+        <input class="withdraw-input"
+               inputmode="decimal"
+               placeholder="e.g. 0.25"
+               @bind="AmountSolText"
+               @bind:event="oninput"
+               disabled="@IsBusy" />
+
+        <div class="amount-preview">
+            ≈ @AmountEurText EUR
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(SuccessText))
+        {
+            <div class="withdraw-hint" style="color: rgba(120,255,170,0.95); margin-top: 10px;">
+                @SuccessText
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ErrorText))
+        {
+            <div class="withdraw-error">
+                @ErrorText
+            </div>
+        }
+
+        <div class="withdraw-actions">
+            <button class="btn-primary"
+                    @onclick="OnWithdrawClicked"
+                    disabled="@IsBusy">
+                WITHDRAW
+            </button>
+
+            <button class="btn-secondary"
+                    @onclick="OnCancel"
+                    disabled="@IsBusy">
+                CANCEL
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string SelectedNetwork = "SOL";
+    private string WithdrawalAddress = "";
+    private string AmountSolText = "";
+
+    private bool IsBusy;
+    private string? ErrorText;
+    private string? SuccessText;
+
+    private double? SolPriceEur;
+
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (auth.User.Identity?.IsAuthenticated != true)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        // Live Preis für Preview
+        try
+        {
+            SolPriceEur = await WithdrawlService.GetSolPriceEurAsync(_cts.Token);
+        }
+        catch
+        {
+            SolPriceEur = null; // Preview zeigt dann "—"
+        }
+    }
+
+    private string AmountEurText
+    {
+        get
+        {
+            if (!TryParseAmountSol(out var sol) || sol <= 0.0)
+                return "0.00";
+
+            if (!SolPriceEur.HasValue || SolPriceEur.Value <= 0.0)
+                return "—";
+
+            return (sol * SolPriceEur.Value).ToString("0.00");
+        }
+    }
+
+    private async Task OnWithdrawClicked()
+    {
+        ErrorText = null;
+        SuccessText = null;
+
+        if (string.IsNullOrWhiteSpace(WithdrawalAddress))
+        {
+            ErrorText = "Withdrawal address required.";
+            return;
+        }
+
+        if (!TryParseAmountSol(out var amountSol) || amountSol <= 0.0)
+        {
+            ErrorText = "Invalid SOL amount.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var sig = await WithdrawAsync(SelectedNetwork, WithdrawalAddress.Trim(), amountSol);
+
+            SuccessText = $"Withdraw submitted. Tx: {sig}";
+            // Optional: nicht sofort weg-navigieren, damit user sig sieht
+            // Nav.NavigateTo("/", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            ErrorText = $"Withdraw failed: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task<string> WithdrawAsync(string network, string toAddress, double amountSol)
+    {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var principal = auth.User;
+
+        if (principal.Identity?.IsAuthenticated != true)
+            throw new InvalidOperationException("Not authenticated.");
+
+        var user = await UserManager.GetUserAsync(principal);
+        if (user == null)
+            throw new InvalidOperationException("User not found.");
+
+        if (_cts == null)
+            _cts = new CancellationTokenSource();
+
+        // Service macht: Treasury -> toAddress, fee payer treasury, BalanceCrypto wird reduziert
+        return await WithdrawlService.WithdrawAsync(user.Id, toAddress, amountSol, _cts.Token);
+    }
+
+    private bool TryParseAmountSol(out double amount)
+    {
+        var txt = (AmountSolText ?? "").Trim().Replace(',', '.');
+        return double.TryParse(
+            txt,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out amount);
+    }
+
+    private void OnCancel()
+    {
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _cts?.Cancel();
+            _cts?.Dispose();
+        }
+        catch { }
+    }
+}

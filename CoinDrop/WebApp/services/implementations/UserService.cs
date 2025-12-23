@@ -65,52 +65,76 @@ public class UserService : IUserService
         // Speichern
         await _userManager.UpdateAsync(user);
     }
-    public async Task<IdentityResult> RegisterAsync(RegisterRequest regRequest)
+   public async Task<IdentityResult> RegisterAsync(RegisterRequest regRequest)
+{
+    // Überprüfen, ob der Benutzername oder die E-Mail bereits existiert
+    var existingUserByName = await _userManager.FindByNameAsync(regRequest.UserName);
+    var existingUserByEmail = await _userManager.FindByEmailAsync(regRequest.Email);
+
+    if (existingUserByName != null || existingUserByEmail != null)
     {
-        var user = new ApplicationUser
+        return IdentityResult.Failed(new IdentityError
         {
-            UserName = regRequest.UserName,
-            Email = regRequest.Email,
-            EmailConfirmed = false
-        };
-
-        var result = await _userManager.CreateAsync(user, regRequest.Password);
-        if (!result.Succeeded)
-            return result;
-        
-        await EnsureDepositAddressAsync(user);
-        
-        const string defaultRole = "customer";
-        if (!await _roleManager.RoleExistsAsync(defaultRole))
-        {
-            await _roleManager.CreateAsync(new IdentityRole<int>(defaultRole));
-        }
-
-        await _userManager.AddToRoleAsync(user, defaultRole);
-
-        // Bestätigungs-Token erzeugen
-        var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-        var tokenEncoded = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-
-        var httpContext = _httpContextAccessor.HttpContext
-                          ?? throw new InvalidOperationException("No HttpContext");
-
-        var request = httpContext.Request;
-
-        // https://deine-domain/confirm-email?userId=123&token=abc...
-        var confirmUrl = $"{request.Scheme}://{request.Host}/confirm-email?userId={user.Id}&token={tokenEncoded}";
-
-        var subject = "Bestätige dein CoinDrop Konto";
-        var body = $@"
-        <p>Willkommen bei CoinDrop, {HtmlEncoder.Default.Encode(user.UserName)}!</p>
-        <p>Klicke auf diesen Link, um dein Konto zu bestätigen:</p>
-        <p><a href=""{HtmlEncoder.Default.Encode(confirmUrl)}"">Konto bestätigen</a></p>";
-
-        await SendEmailAsync(user.Email!, subject, body);
-
-        return result;
+            Description = "Der Benutzername oder die E-Mail-Adresse ist bereits vergeben."
+        });
     }
 
+    // Überprüfen, ob das Passwort mindestens 7 Zeichen lang ist
+    if (regRequest.Password.Length < 7)
+    {
+        return IdentityResult.Failed(new IdentityError
+        {
+            Description = "Das Passwort muss mindestens 7 Zeichen lang sein."
+        });
+    }
+
+    // Benutzer erstellen
+    var user = new ApplicationUser
+    {
+        UserName = regRequest.UserName,
+        Email = regRequest.Email,
+        EmailConfirmed = false
+    };
+
+    // Benutzer erstellen
+    var result = await _userManager.CreateAsync(user, regRequest.Password);
+    if (!result.Succeeded)
+        return result;
+
+    // Weitere Logik wie Ensuring Deposit Address, Rollen hinzufügen etc.
+    await EnsureDepositAddressAsync(user);
+
+    const string defaultRole = "customer";
+    if (!await _roleManager.RoleExistsAsync(defaultRole))
+    {
+        await _roleManager.CreateAsync(new IdentityRole<int>(defaultRole));
+    }
+
+    await _userManager.AddToRoleAsync(user, defaultRole);
+
+    // Bestätigungs-Token erzeugen
+    var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+    var tokenEncoded = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+    var httpContext = _httpContextAccessor.HttpContext
+                          ?? throw new InvalidOperationException("No HttpContext");
+
+    var request = httpContext.Request;
+
+    // Bestätigungs-URL
+    var confirmUrl = $"{request.Scheme}://{request.Host}/confirm-email?userId={user.Id}&token={tokenEncoded}";
+
+    var subject = "Bestätige dein CoinDrop Konto";
+    var body = $@"
+    <p>Willkommen bei CoinDrop, {HtmlEncoder.Default.Encode(user.UserName)}!</p>
+    <p>Klicke auf diesen Link, um dein Konto zu bestätigen:</p>
+    <p><a href=""{HtmlEncoder.Default.Encode(confirmUrl)}"">Konto bestätigen</a></p>";
+
+    // Bestätigungs-E-Mail senden
+    await SendEmailAsync(user.Email!, subject, body);
+
+    return result;
+}
     public async Task<SignInResult> LoginAsync(LoginRequest request)
     {
         ApplicationUser? user = await _userManager.FindByNameAsync(request.UserNameOrEmail);

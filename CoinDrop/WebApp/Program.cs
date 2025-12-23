@@ -10,6 +10,7 @@ using WebApp.Components;
 
 using Microsoft.EntityFrameworkCore;
 using WebApp.Endpoints;
+using WebApp.services.implementations;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -81,12 +82,16 @@ builder.Services.AddScoped<LogRepo>();
 // UserService
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ISolanService,SolanaWalletService>();
+//wallet service 
+
 //crypto
 builder.Services.Configure<CryptoConfig>(
     builder.Configuration.GetSection("Crypto"));
 builder.Services.AddScoped<SolBalanceScannerJob>();
 builder.Services.AddHostedService<CoinDrop.services.SolBalanceScannerHosted>();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<WithdrawlService>();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

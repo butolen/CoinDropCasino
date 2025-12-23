@@ -1,0 +1,124 @@
+.withdraw-page{
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(
+            ellipse at center,
+            #202020 0%,
+            #0b0b0b 60%,
+            #000 100%
+    );
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.withdraw-card{
+    width: 420px;
+    height: 560px;
+    border-radius: 14px;
+    padding: 26px 28px;
+    background: radial-gradient(
+            ellipse at top,
+            #133326 0%,
+            #0d251c 55%,
+            #081812 100%
+    );
+    box-shadow: 0 16px 40px rgba(0,0,0,0.75);
+    border: 1px solid rgba(246,201,100,0.18);
+    position: relative;
+}
+
+.withdraw-title{
+    text-align: center;
+    color: #f6c964;
+    font-size: 34px;
+    font-weight: 700;
+    margin-bottom: 14px;
+    font-family: Georgia, "Times New Roman", serif;
+}
+
+/* ---------- Inputs ---------- */
+
+.withdraw-label{
+    display: block;
+    color: rgba(246,201,100,0.85);
+    font-size: 13px;
+    margin: 10px 0 6px 2px;
+}
+
+.withdraw-input,
+.withdraw-select{
+    width: 100%;
+    height: 44px;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(246,201,100,0.35);
+    border-radius: 6px;
+    color: #f6c964;
+    padding: 0 14px;
+    outline: none;
+    font-size: 16px;
+}
+
+.withdraw-input::placeholder{
+    color: rgba(246,201,100,0.4);
+}
+
+/* ---------- Hints & Preview ---------- */
+
+.withdraw-hint{
+    margin-top: 6px;
+    color: rgba(246,201,100,0.75);
+    font-size: 12px;
+}
+
+.withdraw-error{
+    margin-top: 10px;
+    color: rgba(255,120,120,0.95);
+    font-size: 12px;
+}
+
+.amount-preview{
+    margin-top: 6px;
+    color: rgba(246,201,100,0.75);
+    font-size: 12px;
+}
+
+/* ---------- Actions ---------- */
+
+.withdraw-actions{
+    position: absolute;
+    left: 28px;
+    right: 28px;
+    bottom: 26px;
+    display: flex;
+    gap: 18px;
+}
+
+.btn-primary{
+    flex: 1;
+    height: 48px;
+    border-radius: 6px;
+    border: 1px solid #e2b85d;
+    background: linear-gradient(180deg, #f6c964 0%, #d8a748 100%);
+    color: #101010;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+}
+
+.btn-primary:disabled{
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-secondary{
+    flex: 1;
+    height: 48px;
+    border-radius: 6px;
+    border: 1px solid rgba(246,201,100,0.65);
+    background: transparent;
+    color: rgba(246,201,100,0.95);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+}
