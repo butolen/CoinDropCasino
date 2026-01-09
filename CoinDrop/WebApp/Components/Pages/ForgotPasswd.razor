@@ -1,0 +1,62 @@
+@page "/forgot-passwd"
+@using CoinDrop.services.interfaces
+@rendermode InteractiveServer
+@inject IUserService UserService
+@inject NavigationManager Nav
+
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="brand">COINDROP</div>
+
+        <div class="tabs">
+            <a class="tab" href="/login">LOGIN</a>
+            <a class="tab" href="/register">REGISTER</a>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="title">Passwort zurücksetzen</div>
+        <div class="subtitle">Gib deine E-Mail ein. Wir schicken dir einen Reset-Link.</div>
+
+        <div class="field">
+            <label>E-Mail</label>
+            <input class="input" type="email" placeholder="you@email.com" @bind="_email" />
+        </div>
+
+        <button class="btn-primary" @onclick="Send" disabled="@_busy">
+            RESET LINK SENDEN
+        </button>
+
+        @if (!string.IsNullOrWhiteSpace(_msg))
+        {
+            <div class="msg">@_msg</div>
+        }
+
+        <div class="back">
+            <a href="/login">Zurück zum Login</a>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _email = "";
+    private bool _busy;
+    private string? _msg;
+
+    private async Task Send()
+    {
+        _busy = true;
+        _msg = null;
+
+        try
+        {
+            // ✅ generische Antwort (leakt nix)
+            var res = await UserService.SendPasswordResetLinkByEmailAsync(_email);
+            _msg = "Wenn die E-Mail existiert, wurde ein Reset-Link gesendet.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

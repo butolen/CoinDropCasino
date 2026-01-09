@@ -15,7 +15,10 @@ public class ApplicationUser : IdentityUser<int>
     [Column("balancephysical", TypeName = "double")]
     [DefaultValue(0.0)]
     public double BalancePhysical { get; set; } = 0.0;
-
+    
+    [Column("session_code", TypeName = "int")]
+    public int? SessionCode { get; set; } 
+    
     [Column("balancecrypto", TypeName = "double")]
     [DefaultValue(0.0)]
     public double BalanceCrypto { get; set; } = 0.0;

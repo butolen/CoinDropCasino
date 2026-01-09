@@ -17,7 +17,7 @@ public class CoinDropContext : IdentityDbContext<ApplicationUser, IdentityRole<i
 
     public DbSet<GameSession> GameSessions => Set<GameSession>();
     public DbSet<Log> Logs => Set<Log>();
-
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     protected override void OnModelCreating(ModelBuilder b)
     {
         // Wichtig: Identity zuerst
@@ -52,6 +52,8 @@ public class CoinDropContext : IdentityDbContext<ApplicationUser, IdentityRole<i
             .HasForeignKey(l => l.UserId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        b.Entity<SystemSetting>()
+            .ToTable("system_settings");
         // ---------- TPT Mapping ----------
         // Base table
         b.Entity<Transaction>()

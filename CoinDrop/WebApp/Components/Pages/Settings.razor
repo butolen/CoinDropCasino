@@ -1,0 +1,270 @@
+@page "/settings"
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using CoinDrop.services.interfaces
+@rendermode InteractiveServer
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IUserService UserService
+@inject NavigationManager Nav
+
+<div class="panel">
+    <div class="panel-title">SETTINGS</div>
+
+    @if (!_loaded)
+    {
+        <div class="muted">Loading...</div>
+    }
+    else if (!_isAuth)
+    {
+        <div class="muted">Not logged in.</div>
+    }
+    else
+    {
+        <div class="settings-grid">
+            <!-- PROFILE IMAGE -->
+            <div class="card">
+                <div class="card-title">Profile Picture</div>
+
+                <div class="pfp-row">
+                    <img class="pfp" src="@(_pfpUrl ?? "/images/default-pfp.png")" alt="Profile picture" />
+
+                    <div class="pfp-actions">
+                        <InputFile OnChange="OnPfpSelected" accept="image/png,image/jpeg,image/webp" />
+                        <button class="btn-primary" @onclick="UploadPfp" disabled="@(_pfpFile is null || _busy)">
+                            Upload
+                        </button>
+
+                        @if (!string.IsNullOrWhiteSpace(_pfpMsg))
+                        {
+                            <div class="muted">@_pfpMsg</div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- EMAIL -->
+            <div class="card">
+                <div class="card-title">Email</div>
+
+                <div class="row">
+                    <div><b>Current:</b> @_email</div>
+                    <div><b>Confirmed:</b> @(_emailConfirmed ? "Yes" : "No")</div>
+                </div>
+
+                <div class="row">
+                    <button class="btn-ghost" @onclick="ResendConfirmEmail" disabled="@(_emailConfirmed || _busy)">
+                        Resend confirmation
+                    </button>
+                </div>
+
+                <div class="row">
+                    <input class="input" placeholder="New email" @bind="_newEmail" />
+                    <button class="btn-primary" @onclick="RequestEmailChange" disabled="@_busy">
+                        Send confirm link
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_emailMsg))
+                {
+                    <div class="muted">@_emailMsg</div>
+                }
+            </div>
+
+            <!-- USERNAME -->
+            <div class="card">
+                <div class="card-title">Username</div>
+
+                <div class="row">
+                    <div><b>Current:</b> @_userName</div>
+                </div>
+
+                <div class="row">
+                    <input class="input" placeholder="New username" @bind="_newUserName" />
+                    <button class="btn-primary" @onclick="ChangeUserName" disabled="@_busy">
+                        Change
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_userMsg))
+                {
+                    <div class="muted">@_userMsg</div>
+                }
+            </div>
+
+            <!-- PASSWORD -->
+            <div class="card">
+                <div class="card-title">Password</div>
+
+                <div class="row">
+                    <button class="btn-primary" @onclick="SendResetLink" disabled="@_busy">
+                        Send reset link to email
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_pwdMsg))
+                {
+                    <div class="muted">@_pwdMsg</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loaded;
+    private bool _isAuth;
+    private bool _busy;
+
+    private string? _pfpUrl;
+    private IBrowserFile? _pfpFile;
+    private string? _pfpMsg;
+
+    private string? _email;
+    private bool _emailConfirmed;
+    private string? _newEmail;
+    private string? _emailMsg;
+
+    private string? _userName;
+    private string? _newUserName;
+    private string? _userMsg;
+
+    private string? _pwdMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // optional msg vom redirect (confirm-email-change)
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (q["msg"] == "email-updated") _emailMsg = "Email updated.";
+
+        await LoadMe();
+        _loaded = true;
+    }
+
+    private async Task LoadMe()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var principal = state.User;
+
+        _isAuth = principal?.Identity?.IsAuthenticated == true;
+        if (!_isAuth) return;
+
+        var me = await UserService.GetCurrentUserAsync(principal);
+        if (me == null) { _isAuth = false; return; }
+
+        _email = me.Email;
+        _emailConfirmed = me.EmailConfirmed;
+
+        _userName = me.UserName;
+        _pfpUrl = me.ProfileImage;
+    }
+
+    private void OnPfpSelected(InputFileChangeEventArgs e)
+    {
+        _pfpMsg = null;
+        _pfpFile = e.File;
+    }
+
+    private async Task UploadPfp()
+    {
+        if (_pfpFile is null) return;
+
+        _busy = true;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            await using var stream = _pfpFile.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+
+            var res = await UserService.UploadProfileImageAsync(
+                state.User,
+                stream,
+                _pfpFile.ContentType,
+                _pfpFile.Size);
+
+            _pfpMsg = res.Succeeded
+                ? "Profile image updated."
+                : string.Join(" | ", res.Errors.Select(e => e.Description));
+
+            await LoadMe();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ResendConfirmEmail()
+    {
+        _busy = true;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var res = await UserService.ResendEmailConfirmationAsync(state.User);
+
+            _emailMsg = res.Succeeded
+                ? "Confirmation email sent."
+                : string.Join(" | ", res.Errors.Select(e => e.Description));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RequestEmailChange()
+    {
+        _busy = true;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var res = await UserService.RequestEmailChangeAsync(state.User, _newEmail ?? "");
+
+            _emailMsg = res.Succeeded
+                ? "Confirm link sent to new email."
+                : string.Join(" | ", res.Errors.Select(e => e.Description));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ChangeUserName()
+    {
+        _busy = true;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var res = await UserService.RequestUserNameChangeAsync(state.User, _newUserName ?? "");
+
+            _userMsg = res.Succeeded
+                ? "Username updated."
+                : string.Join(" | ", res.Errors.Select(e => e.Description));
+
+            await LoadMe();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SendResetLink()
+    {
+        _busy = true;
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var res = await UserService.SendPasswordResetLinkAsync(state.User);
+
+            _pwdMsg = res.Succeeded
+                ? "Reset link sent."
+                : string.Join(" | ", res.Errors.Select(e => e.Description));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

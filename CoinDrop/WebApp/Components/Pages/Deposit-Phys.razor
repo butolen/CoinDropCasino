@@ -1,6 +1,12 @@
 @page "/deposit-phys"
-@inject NavigationManager Nav
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
 @rendermode InteractiveServer
+
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthStateProvider
+@inject SessionCodeService SessionCodeService
+
 <div class="deposit-page">
     <div class="deposit-card">
         <div class="deposit-title">Deposit</div>
@@ -15,22 +21,113 @@
                @bind="AmountText"
                placeholder="0.00€" />
 
-        <div class="session-code">Session-Code: <span>@SessionCode</span></div>
+        @if (IsSessionVisible)
+        {
+            <div class="session-code">
+                Session-Code: <span>@SessionCode</span>
+            </div>
+
+            <button class="btn-secondary" @onclick="OnGenerateNew" disabled="@IsBusy">
+                Generate new!
+            </button>
+
+            <div class="deposit-hint">
+                please reload the site after completing your deposit
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <div class="deposit-error">@ErrorMessage</div>
+        }
 
         <div class="deposit-actions">
-            <button class="btn-primary" @onclick="OnDeposit">DEPOSIT</button>
-            <button class="btn-secondary" @onclick="OnCancel">CANCEL</button>
+            <button class="btn-primary" @onclick="OnDeposit" disabled="@IsBusy">
+                DEPOSIT
+            </button>
+            <button class="btn-secondary" @onclick="OnCancel" disabled="@IsBusy">
+                CANCEL
+            </button>
         </div>
     </div>
 </div>
 
 @code {
     private string AmountText = "15.50€";
-    private int SessionCode = 8362;
 
-    private void OnDeposit()
+    private bool IsSessionVisible = false;
+    private int SessionCode;
+    private bool IsBusy = false;
+    private string? ErrorMessage;
+
+    private async Task<int?> GetUserIdAsync()
     {
-        // TODO: hier dein physischer Deposit Flow
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var principal = authState.User;
+
+        if (principal?.Identity?.IsAuthenticated != true)
+            return null;
+
+        var idText = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (int.TryParse(idText, out int userId))
+            return userId;
+
+        return null;
+    }
+
+    private async Task OnDeposit()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        ErrorMessage = null;
+
+        try
+        {
+            int? userId = await GetUserIdAsync();
+            if (userId is null)
+            {
+                Nav.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+
+            // Session-Code erst beim Deposit erzeugen + speichern
+            SessionCode = await SessionCodeService.GenerateAndStoreUniqueCodeAsync(userId.Value);
+            IsSessionVisible = true;
+
+            // TODO: hier dein physischer Deposit Flow
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task OnGenerateNew()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        ErrorMessage = null;
+
+        try
+        {
+            int? userId = await GetUserIdAsync();
+            if (userId is null) return;
+
+            SessionCode = await SessionCodeService.GenerateAndStoreUniqueCodeAsync(userId.Value);
+            IsSessionVisible = true;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     private void OnCancel()

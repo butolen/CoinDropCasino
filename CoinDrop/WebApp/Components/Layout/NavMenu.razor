@@ -1,88 +1,81 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 @using Domain
-
 @using CoinDrop
+
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 @inject UserRepo UserRepo
+
 @implements IDisposable
 @rendermode InteractiveServer
 
 <nav class="casino-navbar">
-    @if (IsAdmin)
-    {
-        <div class="admin-navbar-left">
-            <span class="admin-title">ADMIN PANEL</span>
-        </div>
+    <!-- LEFT: Logo immer -->
+    <div class="navbar-left" @onclick="@(() => Nav.NavigateTo("/"))">
+        <img src="images/logo.png" alt="Online Casino Logo" class="navbar-logo-img" />
+    </div>
 
-        <div class="admin-navbar-center">
-            <NavLink href="/admin/dashboard" class="nav-link" activeClass="nav-link-active">Dashboard</NavLink>
+    <!-- CENTER: Standard Links immer -->
+    <div class="navbar-center">
+        <NavLink href="/" class="nav-link" activeClass="nav-link-active">Home</NavLink>
+        <NavLink href="/about" class="nav-link" activeClass="nav-link-active">About</NavLink>
+        <NavLink href="/roulette" class="nav-link" activeClass="nav-link-active">Roulette</NavLink>
+        <NavLink href="/blackjack" class="nav-link" activeClass="nav-link-active">Blackjack</NavLink>
+
+        @if (IsAuthenticated)
+        {
+            <NavLink href="/history" class="nav-link" activeClass="nav-link-active">History</NavLink>
+        }
+
+        @if (IsAdmin)
+        {
+            <span class="nav-sep">|</span>
+            <NavLink href="/admin/dashboard" class="nav-link" activeClass="nav-link-active">Admin</NavLink>
             <NavLink href="/admin/users" class="nav-link" activeClass="nav-link-active">Users</NavLink>
             <NavLink href="/admin/settings" class="nav-link" activeClass="nav-link-active">Settings</NavLink>
-        </div>
+        }
+    </div>
 
-        <div class="admin-navbar-right">
-            <button class="btn-nav btn-logout" @onclick="Logout">LOGOUT</button>
-        </div>
-    }
-    else
-    {
-        <div class="navbar-left" @onclick="@(() => Nav.NavigateTo("/"))">
-            <img src="images/logo.png" alt="Online Casino Logo" class="navbar-logo-img" />
-        </div>
-
-        <div class="navbar-center">
-            <NavLink href="/" class="nav-link" activeClass="nav-link-active">Home</NavLink>
-            <NavLink href="/about" class="nav-link" activeClass="nav-link-active">About</NavLink>
-            <NavLink href="/roulette" class="nav-link" activeClass="nav-link-active">Roulette</NavLink>
-            <NavLink href="/blackjack" class="nav-link" activeClass="nav-link-active">Blackjack</NavLink>
-
-            @if (IsCustomer)
-            {
-                <NavLink href="/history" class="nav-link" activeClass="nav-link-active">History</NavLink>
-            }
-        </div>
-
-        <div class="navbar-right">
-            @if (!IsAuthenticated)
-            {
-                <button class="btn-nav btn-login" @onclick='() => Nav.NavigateTo("/login")'>LOG IN</button>
-                <button class="btn-nav btn-register" @onclick='() => Nav.NavigateTo("/register")'>REGISTER</button>
-            }
-            else
-            {
-                <!-- SETTINGS -->
-                <a href="/settings" class="user-icon-link" title="Settings">
-                    <span class="user-icon">
-                        <i class="user-circle"></i>
-                    </span>
-                </a>
-
-                <!-- BALANCE (links von Withdraw/Deposit) -->
-                <span class="nav-balance" title="Total Balance">
-                    @BalanceText
+    <!-- RIGHT: Auth Buttons / User Actions -->
+    <div class="navbar-right">
+        @if (!IsAuthenticated)
+        {
+            <button class="btn-nav btn-login" @onclick='() => Nav.NavigateTo("/login")'>LOG IN</button>
+            <button class="btn-nav btn-register" @onclick='() => Nav.NavigateTo("/register")'>REGISTER</button>
+        }
+        else
+        {
+            <!-- SETTINGS -->
+            <a href="/settings" class="user-icon-link" title="Settings">
+                <span class="user-icon">
+                    <i class="user-circle"></i>
                 </span>
+            </a>
 
-                <!-- WITHDRAW (links vom Deposit) -->
-                <button class="btn-nav btn-withdraw"
-                        @onclick='() => Nav.NavigateTo("/withdraw-crypto")'>
-                    WITHDRAW
-                </button>
+            <!-- BALANCE -->
+            <span class="nav-balance" title="Total Balance">
+                @BalanceText
+            </span>
 
-                <!-- DEPOSIT -->
-                <button class="btn-nav btn-deposit"
-                        @onclick='() => Nav.NavigateTo("/deposit-crypto")'>
-                    DEPOSIT
-                </button>
+            <!-- WITHDRAW -->
+            <button class="btn-nav btn-withdraw"
+                    @onclick='() => Nav.NavigateTo("/withdraw-crypto")'>
+                WITHDRAW
+            </button>
 
-                <!-- LOGOUT -->
-                <button class="btn-nav btn-logout" @onclick="Logout">
-                    LOGOUT
-                </button>
-            }
-        </div>
-    }
+            <!-- DEPOSIT -->
+            <button class="btn-nav btn-deposit"
+                    @onclick='() => Nav.NavigateTo("/deposit-crypto")'>
+                DEPOSIT
+            </button>
+
+            <!-- LOGOUT -->
+            <button class="btn-nav btn-logout" @onclick="Logout">
+                LOGOUT
+            </button>
+        }
+    </div>
 </nav>
 
 @code {
@@ -96,13 +89,23 @@
     private double? TotalBalance; // null = noch nicht geladen
     private string BalanceText => TotalBalance is null ? "—" : $"{TotalBalance.Value:0.00} €";
 
+    private bool _loadedOnce;
+
     protected override async Task OnInitializedAsync()
     {
-        AuthStateProvider.AuthenticationStateChanged += OnAuthenticationStateChanged;
-        await UpdateAuthAsync();
+        await UpdateAuthFlagsOnlyAsync();
     }
 
-    private async Task UpdateAuthAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _loadedOnce) return;
+        _loadedOnce = true;
+
+        await LoadBalanceIfNeededAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task UpdateAuthFlagsOnlyAsync()
     {
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = state.User;
@@ -111,20 +114,26 @@
         IsCustomer = IsAuthenticated && user.IsInRole(RoleCustomer);
         IsAdmin = IsAuthenticated && user.IsInRole(RoleAdmin);
 
-        if (IsAuthenticated && !IsAdmin)
-        {
-            await LoadBalanceAsync(user);
-        }
-        else
-        {
-            TotalBalance = null;
-        }
+        TotalBalance = null;
     }
 
-    private async Task LoadBalanceAsync(ClaimsPrincipal principal, CancellationToken ct = default)
+    private async Task LoadBalanceIfNeededAsync(CancellationToken ct = default)
     {
-        // IdentityUser<int> -> NameIdentifier sollte die int UserId enthalten
-        var idRaw = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+
+        IsAuthenticated = user.Identity?.IsAuthenticated ?? false;
+        IsCustomer = IsAuthenticated && user.IsInRole(RoleCustomer);
+        IsAdmin = IsAuthenticated && user.IsInRole(RoleAdmin);
+
+        // ✅ Admin sieht alles wie User => Balance auch für Admin laden
+        if (!IsAuthenticated)
+        {
+            TotalBalance = null;
+            return;
+        }
+
+        var idRaw = user.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!int.TryParse(idRaw, out var userId))
         {
             TotalBalance = null;
@@ -132,24 +141,7 @@
         }
 
         var dbUser = await UserRepo.GetAsync(userId, ct);
-        TotalBalance = dbUser?.TotalBalance; // Physical + Crypto (double)
-    }
-
-    private async void OnAuthenticationStateChanged(Task<AuthenticationState> task)
-    {
-        var state = await task;
-        var user = state.User;
-
-        IsAuthenticated = user.Identity?.IsAuthenticated ?? false;
-        IsCustomer = IsAuthenticated && user.IsInRole(RoleCustomer);
-        IsAdmin = IsAuthenticated && user.IsInRole(RoleAdmin);
-
-        if (IsAuthenticated && !IsAdmin)
-            await LoadBalanceAsync(user);
-        else
-            TotalBalance = null;
-
-        await InvokeAsync(StateHasChanged);
+        TotalBalance = dbUser?.TotalBalance;
     }
 
     private void Logout()
@@ -159,6 +151,6 @@
 
     public void Dispose()
     {
-        AuthStateProvider.AuthenticationStateChanged -= OnAuthenticationStateChanged;
+        // nix zu tun, kein Event hooked
     }
 }

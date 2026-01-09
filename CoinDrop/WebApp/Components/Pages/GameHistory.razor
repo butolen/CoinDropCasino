@@ -1,38 +1,39 @@
-﻿@page "/history"
+@page "/game-history"
 @using System.Security.Claims
 @using CoinDrop.services.interfaces
 @using Microsoft.AspNetCore.Components.Authorization
 @using WebApp.services.dtos
 @rendermode InteractiveServer
 
-@inject ITransactionHistoryService HistoryService
+@inject IGameHistoryService GameHistoryService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 
 <div class="history-page">
     <div class="panel">
-        <div class="panel-title">HISTORY</div>
+        <div class="panel-title">GAME HISTORY</div>
 
-        <a class="game-history-btn" href="/game-history">GAME HISTORY</a>
+        <a class="transaction-history-btn" href="/history">TRANSACTION HISTORY</a>
 
-        <div class="section-title">TRANSACTION HISTORY</div>
+        <div class="section-title">GAME SESSIONS</div>
 
         <div class="filters">
             <div class="field">
-                <label>Action</label>
-                <select @bind="_query.Action">
-                    <option value="@TransactionActionFilter.All">All</option>
-                    <option value="@TransactionActionFilter.Deposit">Deposit</option>
-                    <option value="@TransactionActionFilter.Withdrawal">Withdrawal</option>
+                <label>Game Type</label>
+                <select @bind="_query.GameType">
+                    <option value="@GameTypeFilter.All">All</option>
+                    <option value="@GameTypeFilter.Blackjack">Blackjack</option>
+                    <option value="@GameTypeFilter.Roulette">Roulette</option>
                 </select>
             </div>
 
             <div class="field">
-                <label>Type</label>
-                <select @bind="_query.Type">
-                    <option value="@TransactionTypeFilter.All">All</option>
-                    <option value="@TransactionTypeFilter.Physical">Physical</option>
-                    <option value="@TransactionTypeFilter.Crypto">Crypto</option>
+                <label>Result</label>
+                <select @bind="_query.Result">
+                    <option value="@GameResultFilter.All">All</option>
+                    <option value="@GameResultFilter.Win">Win</option>
+                    <option value="@GameResultFilter.Loss">Loss</option>
+                    <option value="@GameResultFilter.Draw">Draw</option>
                 </select>
             </div>
 
@@ -51,11 +52,19 @@
             </div>
 
             <div class="field">
-                <label>Min Deposit (EUR)</label>
+                <label>Min Bet Amount (EUR)</label>
                 <input type="number"
                        step="0.01"
                        min="0"
-                       @bind="_minDepositEur" />
+                       @bind="_minBetAmount" />
+            </div>
+
+            <div class="field">
+                <label>Min Win Amount (EUR)</label>
+                <input type="number"
+                       step="0.01"
+                       min="0"
+                       @bind="_minWinAmount" />
             </div>
 
             <div class="filter-actions">
@@ -68,13 +77,13 @@
             <table class="tx-table">
                 <thead>
                     <tr>
-                        <th>Action</th>
-                        <th>Type</th>
-                        <th class="num">Amount (EUR)</th>
-                        <th>Asset Type</th>
-                        <th>Network</th>
+                        <th>Game</th>
+                        <th class="num">Bet Amount (EUR)</th>
+                        <th>Result</th>
+                        <th class="num">Win Amount (EUR)</th>
+                        <th>Balance Before</th>
+                        <th>Balance After</th>
                         <th>Timestamp (Local)</th>
-                        <th>Tx Hash</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -84,29 +93,20 @@
                     }
                     else if (_rows.Length == 0)
                     {
-                        <tr><td colspan="7" class="muted">No transactions found.</td></tr>
+                        <tr><td colspan="7" class="muted">No game sessions found.</td></tr>
                     }
                     else
                     {
                         @foreach (var r in _rows)
                         {
                             <tr>
-                                <td>@r.Action</td>
-                                <td>@r.Type</td>
-                                <td class="num">@FormatEur(r.EurAmount)</td>
-                                <td>@r.AssetType</td>
-                                <td>@(string.IsNullOrWhiteSpace(r.Network) ? "—" : r.Network)</td>
+                                <td>@r.Game</td>
+                                <td class="num">@FormatEur(r.BetAmount)</td>
+                                <td class="@GetResultClass(r.Result)">@r.Result</td>
+                                <td class="num @GetWinAmountClass(r.WinAmount)">@FormatEur(r.WinAmount)</td>
+                                <td class="num">@FormatEur(r.BalanceBefore)</td>
+                                <td class="num">@FormatEur(r.BalanceAfter)</td>
                                 <td>@ToLocal(r.TimestampUtc).ToString("dd.MM.yyyy HH:mm")</td>
-                                <td class="tx-hash">
-                                    @if (!string.IsNullOrWhiteSpace(r.TxHash))
-                                    {
-                                        <span title="@r.TxHash">@r.TxHash</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="muted">—</span>
-                                    }
-                                </td>
                             </tr>
                         }
                     }
@@ -115,29 +115,27 @@
         </div>
     </div>
 </div>
+
 @code {
     private bool _loading;
-    private TransactionHistoryRowDto[] _rows = Array.Empty<TransactionHistoryRowDto>();
+    private GameHistoryRowDto[] _rows = Array.Empty<GameHistoryRowDto>();
 
-    private TransactionHistoryQuery _query = new()
+    private GameHistoryQuery _query = new()
     {
-        Action = TransactionActionFilter.All,
-        Type = TransactionTypeFilter.All
+        GameType = GameTypeFilter.All,
+        Result = GameResultFilter.All
     };
 
     private DateTime? _fromLocal;
     private DateTime? _toLocal;
-    private double? _minDepositEur;
+    private double? _minBetAmount;
+    private double? _minWinAmount;
 
-    // ✅ verhindert parallele LoadAsync Aufrufe (Reload/Render/Click)
     private readonly SemaphoreSlim _loadLock = new(1, 1);
-
-    // ✅ verhindert doppeltes Initial-Laden bei InteractiveServer Reload
     private bool _loadedOnce;
 
     protected override Task OnInitializedAsync()
     {
-        // NICHT laden hier
         return Task.CompletedTask;
     }
 
@@ -158,15 +156,16 @@
 
     private async Task ResetFilters()
     {
-        _query = new TransactionHistoryQuery
+        _query = new GameHistoryQuery
         {
-            Action = TransactionActionFilter.All,
-            Type = TransactionTypeFilter.All
+            GameType = GameTypeFilter.All,
+            Result = GameResultFilter.All
         };
 
         _fromLocal = null;
         _toLocal = null;
-        _minDepositEur = null;
+        _minBetAmount = null;
+        _minWinAmount = null;
 
         await LoadAsync();
     }
@@ -181,11 +180,11 @@
             var userId = await GetCurrentUserIdAsync();
             if (userId <= 0)
             {
-                _rows = Array.Empty<TransactionHistoryRowDto>();
+                _rows = Array.Empty<GameHistoryRowDto>();
                 return;
             }
 
-            var result = await HistoryService.GetForUserAsync(userId, _query);
+            var result = await GameHistoryService.GetForUserAsync(userId, _query);
             _rows = result.Items;
         }
         finally
@@ -199,7 +198,8 @@
     {
         _query.FromUtc = _fromLocal.HasValue ? LocalToUtc(_fromLocal.Value) : null;
         _query.ToUtc = _toLocal.HasValue ? LocalToUtc(_toLocal.Value) : null;
-        _query.MinDepositEur = _minDepositEur.HasValue ? Math.Max(0, _minDepositEur.Value) : null;
+        _query.MinBetAmount = _minBetAmount.HasValue ? Math.Max(0, _minBetAmount.Value) : null;
+        _query.MinWinAmount = _minWinAmount.HasValue ? Math.Max(0, _minWinAmount.Value) : null;
     }
 
     private static DateTime LocalToUtc(DateTime local)
@@ -210,6 +210,22 @@
 
     private static string FormatEur(double eur)
         => eur.ToString("0.00") + " €";
+
+    private string GetResultClass(string result)
+    {
+        return result.ToLower() switch
+        {
+            "win" => "result-win",
+            "loss" => "result-loss",
+            "draw" => "result-draw",
+            _ => ""
+        };
+    }
+
+    private string GetWinAmountClass(double winAmount)
+    {
+        return winAmount > 0 ? "win-positive" : "";
+    }
 
     private async Task<int> GetCurrentUserIdAsync()
     {

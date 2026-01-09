@@ -1,11 +1,15 @@
 @page "/login"
 @rendermode InteractiveServer
 
+@using CoinDrop
 @using CoinDrop.services.dtos
 @using CoinDrop.services.interfaces
+@using Microsoft.AspNetCore.Identity
 @inject IUserService UserService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
 
 <EditForm Model="@loginModel" OnValidSubmit="@OnLoginAsync">
     <DataAnnotationsValidator />
@@ -79,6 +83,7 @@
 @code {
     private LoginRequest loginModel = new();
     private string? errorMessage;
+    
     protected override void OnInitialized()
     {
         var uri = new Uri(NavigationManager.Uri);
@@ -86,11 +91,66 @@
 
         if (query["e"] == "1")
             errorMessage = "Benutzername/E-Mail oder Passwort ist ungültig.";
+        else if (query["e"] == "banned")
+            errorMessage = "Dein Konto wurde gesperrt. Bitte kontaktiere den Support.";
+        else if (query["msg"] == "banned")
+            errorMessage = "Dein Konto wurde gesperrt. Bitte kontaktiere den Support.";
     }
+    
     private async Task OnLoginAsync()
     {
         errorMessage = null;
 
+        // 1. Erst User finden
+        ApplicationUser? user = await UserManager.FindByNameAsync(loginModel.UserNameOrEmail);
+        if (user == null)
+        {
+            user = await UserManager.FindByEmailAsync(loginModel.UserNameOrEmail);
+        }
+
+        if (user == null)
+        {
+            errorMessage = "Benutzername/E-Mail oder Passwort ist ungültig.";
+            return;
+        }
+
+        // 2. Prüfen ob User gebannt ist
+        var isLocked = await UserManager.IsLockedOutAsync(user);
+        if (isLocked)
+        {
+            DateTimeOffset? lockoutEnd = await UserManager.GetLockoutEndDateAsync(user);
+
+            if (lockoutEnd.HasValue && lockoutEnd.Value > DateTimeOffset.UtcNow)
+            {
+                DateTimeOffset end = lockoutEnd.Value;
+
+                // User ist gesperrt
+                errorMessage = "🚫 Dein Konto wurde gesperrt.";
+
+                if (end < DateTimeOffset.MaxValue)
+                {
+                    TimeSpan timeLeft = end - DateTimeOffset.UtcNow;
+
+                    if (timeLeft < TimeSpan.FromDays(1))
+                    {
+                        errorMessage += $" Sperre läuft ab in {timeLeft:hh\\:mm\\:ss} Stunden.";
+                    }
+                    else
+                    {
+                        errorMessage += $" Sperre läuft ab am {end:dd.MM.yyyy HH:mm}.";
+                    }
+                }
+            
+                else
+                {
+                    errorMessage += " Die Sperre ist permanent.";
+                }
+                errorMessage += " Bitte kontaktiere den Support unter support@coindrop.com.";
+                return;
+            }
+        }
+
+        // 3. Normales Login
         var result = await UserService.LoginAsync(loginModel);
 
         if (!result.Succeeded)
@@ -99,12 +159,12 @@
             return;
         }
 
-        // Jetzt echter Login via HTTP-Endpoint
+        // 4. Jetzt echter Login via HTTP-Endpoint
         var form = new Dictionary<string, object>
         {
             { "u", loginModel.UserNameOrEmail },
             { "p", loginModel.Password },
-            { "rememberMe", "false" } // oder später aus Checkbox
+            { "rememberMe", "false" }
         };
 
         await JS.InvokeVoidAsync("postRedirect", "/auth/password-login", form);

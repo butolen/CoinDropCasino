@@ -1,0 +1,227 @@
+@page "/admin/dashboard"
+@using Microsoft.AspNetCore.Authorization
+@using System.Globalization
+@using CoinDrop.services.interfaces
+
+@using WebApp.services.dtos
+
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+
+@inject IAdminDashboardService DashboardService
+
+<div class="dash-wrap">
+    <div class="dash-header">
+        <div class="dash-title">DASHBOARD</div>
+
+        <div class="dash-range">
+            <button class="range-btn @(Range == TimeRange.Today ? "active" : "")" @onclick="() => SetRangeAsync(TimeRange.Today)">Heute</button>
+            <button class="range-btn @(Range == TimeRange.LastWeek ? "active" : "")" @onclick="() => SetRangeAsync(TimeRange.LastWeek)">Letzte Woche</button>
+            <button class="range-btn @(Range == TimeRange.LastMonth ? "active" : "")" @onclick="() => SetRangeAsync(TimeRange.LastMonth)">Letztes Monat</button>
+            <button class="range-btn @(Range == TimeRange.LastYear ? "active" : "")" @onclick="() => SetRangeAsync(TimeRange.LastYear)">Letztes Jahr</button>
+        </div>
+    </div>
+
+    <div class="cards">
+        <div class="card card-green">
+            <div class="card-label">Casino Guthaben (ALL TIME) (Gewinne - Verluste)</div>
+            <div class="card-value">@Money(Stats.CasinoNetFromGames)</div>
+            <div class="card-sub">Gesamte Zeit</div>
+        </div>
+
+        <div class="card card-orange">
+            <div class="card-label">Win/Lose (@RangeLabel)</div>
+            <div class="card-value @WinLoseClass">@Money(Stats.WinOrLose)</div>
+            <div class="card-sub">Gewinne - Verluste (Casino Sicht) im Zeitraum</div>
+        </div>
+
+        <div class="card card-orange">
+            <div class="card-label">Games (aus Sicht Casino) (@RangeLabel)</div>
+            <div class="card-row">
+                <div class="pill pill-green">Gewonnen: <b>@Stats.CasinoGamesWon</b></div>
+                <div class="pill pill-red">Verloren: <b>@Stats.CasinoGamesLost</b></div>
+                <div class="pill pill-orange">Draw: <b>@Stats.GamesDraw</b></div>
+            </div>
+            <div class="card-sub">Zeitraum: @RangeLabel</div>
+        </div>
+
+        <div class="card card-red">
+            <div class="card-label">Ein-/Auszahlungen (@RangeLabel)</div>
+            <div class="card-grid">
+                <div class="kv">
+                    <span>Alle Einzahlungen - alle Auszahlungen</span>
+                    <b>@Money(Stats.DepositsMinusWithdrawals)</b>
+                </div>
+                <div class="kv">
+                    <span>Summe Auszahlungen</span>
+                    <b>@Money(Stats.WithdrawalsSum)</b>
+                </div>
+                <div class="kv">
+                    <span>Summe Crypto Einzahlungen</span>
+                    <b>@Money(Stats.CryptoDepositsSum)</b>
+                </div>
+                <div class="kv">
+                    <span>Summe Hardware Einzahlungen</span>
+                    <b>@Money(Stats.HardwareDepositsSum)</b>
+                </div>
+            </div>
+            <div class="card-sub">Zeitraum: @RangeLabel</div>
+        </div>
+
+        <div class="card card-orange">
+            <div class="card-label">Höchster Einsatz (@RangeLabel)</div>
+            <div class="card-value">@Money(Stats.HighestBet)</div>
+            <div class="card-sub">Zeitraum: @RangeLabel</div>
+        </div>
+
+        <div class="card card-green">
+            <div class="card-label">Gesamtsumme (@RangeLabel)</div>
+            <div class="card-value">@Money(Stats.RangeTotalFormula)</div>
+            <div class="card-sub">
+                (Alle Einzahlungen + alle Gewinne - alle Auszahlungen + alle Verluste)
+            </div>
+        </div>
+    </div>
+
+    <div class="logs">
+        <div class="logs-header">
+            <div class="logs-title">Logs</div>
+            <div class="logs-sub">Sortiert nach Datum (neu → alt)</div>
+        </div>
+
+        @if (IsLoading && LogItems.Count == 0)
+        {
+            <div class="logs-loading">Lade…</div>
+        }
+        else if (LogItems.Count == 0)
+        {
+            <div class="logs-empty">Keine Logs im Zeitraum.</div>
+        }
+        else
+        {
+            <div class="logs-list">
+                @foreach (var l in LogItems)
+                {
+                    <div class="log-item">
+                        <div class="log-top">
+                            <div class="log-date">@l.Date.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</div>
+                            <div class="log-tags">
+                                <span class="tag tag-@TagClass(l.ActionType)">@l.ActionType</span>
+                                <span class="tag tag-muted">@l.UserType</span>
+                                @if (l.UserId.HasValue)
+                                {
+                                    <span class="tag tag-muted">UserId: @l.UserId</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="log-desc">@l.Description</div>
+                    </div>
+                }
+            </div>
+
+            <div class="logs-actions">
+                <button class="more-btn" disabled="@(!HasMore || IsLoading)" @onclick="LoadMoreAsync">
+                    @(IsLoading ? "Lade..." : (HasMore ? "Mehr anzeigen" : "Keine weiteren Logs"))
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private TimeRange Range = TimeRange.Today;
+
+    private DashboardStatsDto Stats = new();
+
+    private readonly List<LogItemDto> LogItems = new();
+    private const int PageSize = 20;
+    private int _pageIndex = 0;
+
+    private bool IsLoadingStats;
+    private bool IsLoadingLogs;
+    private bool HasMore = true;
+
+    private bool IsLoading => IsLoadingStats || IsLoadingLogs;
+
+    private string RangeLabel => Range switch
+    {
+        TimeRange.Today => "Heute",
+        TimeRange.LastWeek => "Letzte Woche",
+        TimeRange.LastMonth => "Letztes Monat",
+        TimeRange.LastYear => "Letztes Jahr",
+        _ => "—"
+    };
+
+    private string WinLoseClass => Stats.WinOrLose switch
+    {
+        > 0 => "value-positive",
+        < 0 => "value-negative",
+        _ => "value-neutral"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAllAsync();
+    }
+
+    private async Task SetRangeAsync(TimeRange r)
+    {
+        if (Range == r) return;
+        Range = r;
+        await RefreshAllAsync();
+    }
+
+    private async Task RefreshAllAsync()
+    {
+        // Stats laden
+        IsLoadingStats = true;
+        try
+        {
+            Stats = await DashboardService.GetStatsAsync(Range);
+        }
+        finally
+        {
+            IsLoadingStats = false;
+        }
+
+        // Logs reset + erste Seite laden
+        _pageIndex = 0;
+        LogItems.Clear();
+        HasMore = true;
+
+        await LoadMoreAsync();
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (IsLoadingLogs || !HasMore) return;
+
+        IsLoadingLogs = true;
+        try
+        {
+            var result = await DashboardService.GetLogsAsync(Range, _pageIndex, PageSize);
+            LogItems.AddRange(result.Items);
+            HasMore = result.HasMore;
+            _pageIndex++;
+        }
+        finally
+        {
+            IsLoadingLogs = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string Money(double value)
+        => value.ToString("0.00", CultureInfo.InvariantCulture) + " €";
+
+    private static string TagClass(string actionType)
+        => actionType.ToLowerInvariant() switch
+        {
+            "info" => "info",
+            "warning" => "warning",
+            "error" => "error",
+            "adminaction" => "adminaction",
+            "useraction" => "useraction",
+            _ => "info"
+        };
+}

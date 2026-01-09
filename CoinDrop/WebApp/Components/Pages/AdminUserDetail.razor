@@ -1,0 +1,730 @@
+@page "/admin/users/{UserId}"
+@using System.Security.Claims
+@using CoinDrop.services.interfaces
+@using Microsoft.AspNetCore.Components.Authorization
+@using WebApp.services.dtos
+@rendermode InteractiveServer
+
+@inject IAdminUserService AdminUserService
+@inject IGameHistoryService GameHistoryService
+@inject ITransactionHistoryService TransactionHistoryService
+@inject IAdminDashboardService AdminDashboardService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+
+<div class="admin-user-page">
+    <div class="panel">
+        <div class="panel-title">
+            <a href="/admin" class="back-btn">← Back to Admin</a>
+            USER DETAILS
+        </div>
+
+        <!-- User Profile Section -->
+        @if (_userProfile != null)
+        {
+            <div class="user-profile-section">
+                <div class="profile-header">
+                    <div class="profile-avatar">
+                        @if (!string.IsNullOrEmpty(_userProfile.ProfilePictureUrl))
+                        {
+                            <img src="@_userProfile.ProfilePictureUrl" alt="Profile" />
+                        }
+                        else
+                        {
+                            <div class="avatar-placeholder">
+                                @_userProfile.Username[0].ToString().ToUpper()
+                            </div>
+                        }
+                    </div>
+                    <div class="profile-info">
+                        <h2>@_userProfile.Username</h2>
+                        <div class="profile-meta">
+                            <span><strong>Email:</strong> @_userProfile.Email</span>
+                            <span><strong>Joined:</strong> @_userProfile.CreatedAt.ToString("dd.MM.yyyy")</span>
+                            <span><strong>Last Action:</strong> @_userProfile.LastAction</span>
+                        </div>
+                    </div>
+                    <div class="profile-status">
+                        @if (_userProfile.IsAdmin)
+                        {
+                            <span class="status-badge admin">ADMIN</span>
+                        }
+                        @if (_userProfile.IsBanned)
+                        {
+                            <span class="status-badge banned">BANNED</span>
+                        }
+                        @if (!_userProfile.IsAdmin && !_userProfile.IsBanned)
+                        {
+                            <span class="status-badge user">USER</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="networth-stats">
+                    <div class="stat-card">
+                        <div class="stat-label">NET WORTH</div>
+                        <div class="stat-value">@FormatEur(_userProfile.BalancePhysical + _userProfile.BalanceCrypto)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">PHYSICAL BALANCE</div>
+                        <div class="stat-value">@FormatEur(_userProfile.BalancePhysical)</div>
+                        <button class="edit-balance-btn" @onclick="@(() => ShowEditBalanceModal("physical"))">
+                            Edit
+                        </button>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">CRYPTO BALANCE</div>
+                        <div class="stat-value">@FormatEur(_userProfile.BalanceCrypto)</div>
+                        <button class="edit-balance-btn" @onclick="@(() => ShowEditBalanceModal("crypto"))">
+                            Edit
+                        </button>
+                    </div>
+                </div>
+
+                <div class="admin-actions">
+                    <button class="btn-danger" @onclick="ToggleBanUser">
+                        @(_userProfile.IsBanned ? "UNBAN USER" : "BAN USER")
+                    </button>
+                    <button class="btn-warning" @onclick="ToggleAdminRole">
+                        @(_userProfile.IsAdmin ? "REMOVE ADMIN" : "MAKE ADMIN")
+                    </button>
+                </div>
+            </div>
+        }
+        else if (_loadingProfile)
+        {
+            <div class="loading">Loading user profile...</div>
+        }
+        else
+        {
+            <div class="error">User not found</div>
+        }
+
+        <!-- Edit Balance Modal -->
+        @if (_showEditModal)
+        {
+            <div class="modal-overlay" @onclick="CloseEditModal">
+                <div class="modal-content" @onclick:stopPropagation>
+                    <div class="modal-header">
+                        <h3>Edit @(_balanceType == "physical" ? "Physical" : "Crypto") Balance</h3>
+                        <button class="modal-close" @onclick="CloseEditModal">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>New @(_balanceType == "physical" ? "Physical" : "Crypto") Balance (EUR)</label>
+                            <input type="number" step="0.01" min="0" 
+                                   @bind-value="@_newBalanceValue"
+                                   class="balance-input" />
+                        </div>
+                        <div class="current-balance">
+                            Current Balance: @FormatEur(_balanceType == "physical" ? _userProfile.BalancePhysical : _userProfile.BalanceCrypto)
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-ghost" @onclick="CloseEditModal">Cancel</button>
+                        <button class="btn-primary" @onclick="SaveBalance" 
+                                disabled="@(_savingBalance)">
+                            @(_savingBalance ? "Saving..." : "Save Changes")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Game History Section -->
+        <div class="section">
+            <div class="section-title">GAME HISTORY</div>
+            
+            <div class="filters">
+                <div class="field">
+                    <label>Game Type</label>
+                    <select @bind="_gameQuery.GameType">
+                        <option value="@GameTypeFilter.All">All</option>
+                        <option value="@GameTypeFilter.Blackjack">Blackjack</option>
+                        <option value="@GameTypeFilter.Roulette">Roulette</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Result</label>
+                    <select @bind="_gameQuery.Result">
+                        <option value="@GameResultFilter.All">All</option>
+                        <option value="@GameResultFilter.Win">Win</option>
+                        <option value="@GameResultFilter.Loss">Loss</option>
+                        <option value="@GameResultFilter.Draw">Draw</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>From (Local)</label>
+                    <input type="datetime-local"
+                           @bind-value="_gameFromLocal"
+                           @bind-value:format="yyyy-MM-ddTHH:mm" />
+                </div>
+
+                <div class="field">
+                    <label>To (Local)</label>
+                    <input type="datetime-local"
+                           @bind-value="_gameToLocal"
+                           @bind-value:format="yyyy-MM-ddTHH:mm" />
+                </div>
+
+                <div class="field">
+                    <label>Min Bet (EUR)</label>
+                    <input type="number"
+                           step="0.01"
+                           min="0"
+                           @bind="_gameMinBet" />
+                </div>
+
+                <div class="filter-actions">
+                    <button class="btn-primary" @onclick="ApplyGameFilters">Apply</button>
+                    <button class="btn-ghost" @onclick="ResetGameFilters">Reset</button>
+                </div>
+            </div>
+
+            @if (_loadingGames)
+            {
+                <div class="loading">Loading game history...</div>
+            }
+            else if (_gameResult?.Items?.Length > 0)
+            {
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Game</th>
+                                <th class="num">Bet Amount (EUR)</th>
+                                <th>Result</th>
+                                <th class="num">Win Amount (EUR)</th>
+                                <th>Balance Before</th>
+                                <th>Balance After</th>
+                                <th>Timestamp (Local)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var game in _gameResult.Items)
+                            {
+                                <tr>
+                                    <td>@game.Game</td>
+                                    <td class="num">@FormatEur(game.BetAmount)</td>
+                                    <td class="@GetResultClass(game.Result)">@game.Result</td>
+                                    <td class="num @GetWinAmountClass(game.WinAmount)">@FormatEur(game.WinAmount)</td>
+                                    <td class="num">@FormatEur(game.BalanceBefore)</td>
+                                    <td class="num">@FormatEur(game.BalanceAfter)</td>
+                                    <td>@ToLocal(game.TimestampUtc).ToString("dd.MM.yyyy HH:mm")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                
+                @if (_gameResult.TotalCount > _gameResult.PageSize)
+                {
+                    <div class="pagination">
+                        <button class="btn-ghost" 
+                                disabled="@(_gamePage <= 1)"
+                                @onclick="() => ChangeGamePage(-1)">
+                            Previous
+                        </button>
+                        <span>Page @_gamePage of @Math.Ceiling(_gameResult.TotalCount / (double)_gameResult.PageSize)</span>
+                        <button class="btn-ghost"
+                                disabled="@(_gamePage >= Math.Ceiling(_gameResult.TotalCount / (double)_gameResult.PageSize))"
+                                @onclick="() => ChangeGamePage(1)">
+                            Next
+                        </button>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="empty">No game history found</div>
+            }
+        </div>
+
+        <!-- Transaction History Section -->
+        <div class="section">
+            <div class="section-title">TRANSACTION HISTORY</div>
+            
+            <div class="filters">
+                <div class="field">
+                    <label>Action</label>
+                    <select @bind="_txQuery.Action">
+                        <option value="@TransactionActionFilter.All">All</option>
+                        <option value="@TransactionActionFilter.Deposit">Deposit</option>
+                        <option value="@TransactionActionFilter.Withdrawal">Withdrawal</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Type</label>
+                    <select @bind="_txQuery.Type">
+                        <option value="@TransactionTypeFilter.All">All</option>
+                        <option value="@TransactionTypeFilter.Physical">Physical</option>
+                        <option value="@TransactionTypeFilter.Crypto">Crypto</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>From (Local)</label>
+                    <input type="datetime-local"
+                           @bind-value="_txFromLocal"
+                           @bind-value:format="yyyy-MM-ddTHH:mm" />
+                </div>
+
+                <div class="field">
+                    <label>To (Local)</label>
+                    <input type="datetime-local"
+                           @bind-value="_txToLocal"
+                           @bind-value:format="yyyy-MM-ddTHH:mm" />
+                </div>
+
+                <div class="field">
+                    <label>Min Deposit (EUR)</label>
+                    <input type="number"
+                           step="0.01"
+                           min="0"
+                           @bind="_txMinDeposit" />
+                </div>
+
+                <div class="filter-actions">
+                    <button class="btn-primary" @onclick="ApplyTxFilters">Apply</button>
+                    <button class="btn-ghost" @onclick="ResetTxFilters">Reset</button>
+                </div>
+            </div>
+
+            @if (_loadingTransactions)
+            {
+                <div class="loading">Loading transaction history...</div>
+            }
+            else if (_txResult?.Items?.Length > 0)
+            {
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Action</th>
+                                <th>Type</th>
+                                <th class="num">Amount (EUR)</th>
+                                <th>Asset Type</th>
+                                <th>Network</th>
+                                <th>Timestamp (Local)</th>
+                                <th class="wrap-cell">Tx Hash</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tx in _txResult.Items)
+                            {
+                                <tr>
+                                    <td>@tx.Action</td>
+                                    <td>@tx.Type</td>
+                                    <td class="num">@FormatEur(tx.EurAmount)</td>
+                                    <td>@tx.AssetType</td>
+                                    <td>@(string.IsNullOrWhiteSpace(tx.Network) ? "—" : tx.Network)</td>
+                                    <td>@ToLocal(tx.TimestampUtc).ToString("dd.MM.yyyy HH:mm")</td>
+                                    <td class="wrap-cell">
+                                        @if (!string.IsNullOrWhiteSpace(tx.TxHash))
+                                        {
+                                            <span title="@tx.TxHash">@tx.TxHash</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">—</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                
+                @if (_txResult.TotalCount > _txResult.PageSize)
+                {
+                    <div class="pagination">
+                        <button class="btn-ghost" 
+                                disabled="@(_txPage <= 1)"
+                                @onclick="() => ChangeTxPage(-1)">
+                            Previous
+                        </button>
+                        <span>Page @_txPage of @Math.Ceiling(_txResult.TotalCount / (double)_txResult.PageSize)</span>
+                        <button class="btn-ghost"
+                                disabled="@(_txPage >= Math.Ceiling(_txResult.TotalCount / (double)_txResult.PageSize))"
+                                @onclick="() => ChangeTxPage(1)">
+                            Next
+                        </button>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="empty">No transaction history found</div>
+            }
+        </div>
+
+        <!-- User Logs Section -->
+        <div class="section">
+            <div class="section-title">USER LOGS</div>
+            
+            @if (_loadingLogs)
+            {
+                <div class="loading">Loading logs...</div>
+            }
+            else if (_logsResult?.Items?.Count > 0)
+            {
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date & Time</th>
+                                <th>Action Type</th>
+                                <th>User Type</th>
+                                <th class="wrap-cell">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var log in _logsResult.Items)
+                            {
+                                <tr>
+                                    <td>@log.Date.ToString("dd.MM.yyyy HH:mm:ss")</td>
+                                    <td>@log.ActionType</td>
+                                    <td>@log.UserType</td>
+                                    <td class="wrap-cell">@log.Description</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                
+                @if (_logsResult.HasMore)
+                {
+                    <div class="pagination">
+                        <button class="btn-ghost" @onclick="LoadMoreLogs">
+                            Load More Logs
+                        </button>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="empty">No logs found for this user</div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string UserId { get; set; } = string.Empty;
+
+    private class UserProfile
+    {
+        public string Username { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string? ProfilePictureUrl { get; set; }
+        public double BalancePhysical { get; set; }
+        public double BalanceCrypto { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public bool IsAdmin { get; set; }
+        public bool IsBanned { get; set; }
+        public string LastAction { get; set; } = string.Empty;
+    }
+
+    private UserProfile? _userProfile;
+    private bool _loadingProfile;
+    private bool _loadingGames;
+    private bool _loadingTransactions;
+    private bool _loadingLogs;
+    private bool _savingBalance;
+    private bool _showEditModal;
+    private string _balanceType = "physical";
+    private double _newBalanceValue;
+
+    private PagedResultHistory<GameHistoryRowDto>? _gameResult;
+    private PagedResultHistory<TransactionHistoryRowDto>? _txResult;
+    private PagedResultAdmin<LogItemDto>? _logsResult;
+
+    private GameHistoryQuery _gameQuery = new() { GameType = GameTypeFilter.All, Result = GameResultFilter.All };
+    private TransactionHistoryQuery _txQuery = new() { Action = TransactionActionFilter.All, Type = TransactionTypeFilter.All };
+
+    private DateTime? _gameFromLocal;
+    private DateTime? _gameToLocal;
+    private double? _gameMinBet;
+    private DateTime? _txFromLocal;
+    private DateTime? _txToLocal;
+    private double? _txMinDeposit;
+
+    private int _gamePage = 1;
+    private int _txPage = 1;
+    private int _logsPage = 0;
+    private const int PageSize = 20;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrEmpty(UserId) && int.TryParse(UserId, out var userId))
+        {
+            await LoadUserProfile(userId);
+            await LoadGameHistory(userId);
+            await LoadTransactionHistory(userId);
+            await LoadUserLogs(userId);
+        }
+    }
+
+    private async Task LoadUserProfile(int userId)
+    {
+        _loadingProfile = true;
+        try
+        {
+            var userDetails = await AdminUserService.GetUserDetailsAsync(userId);
+            if (userDetails != null)
+            {
+                var status = await AdminUserService.GetUserStatusBatchAsync(new List<int> { userId });
+                var (isAdmin, isBanned, lastAction) = status.GetValueOrDefault(userId, (false, false, ""));
+
+                _userProfile = new UserProfile
+                {
+                    Username = userDetails.UserName ?? "Unknown",
+                    Email = userDetails.Email ?? "No email",
+                    ProfilePictureUrl = userDetails.ProfileImage,
+                    BalancePhysical = userDetails.BalancePhysical,
+                    BalanceCrypto = userDetails.BalanceCrypto,
+                    CreatedAt = userDetails.CreatedAt,
+                    IsAdmin = isAdmin,
+                    IsBanned = isBanned,
+                    LastAction = lastAction
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading user profile: {ex.Message}");
+        }
+        finally
+        {
+            _loadingProfile = false;
+        }
+    }
+
+    private async Task LoadGameHistory(int userId)
+    {
+        _loadingGames = true;
+        try
+        {
+            _gameResult = await GameHistoryService.GetForUserAsync(userId, _gameQuery);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading game history: {ex.Message}");
+        }
+        finally
+        {
+            _loadingGames = false;
+        }
+    }
+
+    private async Task LoadTransactionHistory(int userId)
+    {
+        _loadingTransactions = true;
+        try
+        {
+            _txResult = await TransactionHistoryService.GetForUserAsync(userId, _txQuery);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading transaction history: {ex.Message}");
+        }
+        finally
+        {
+            _loadingTransactions = false;
+        }
+    }
+
+    private async Task LoadUserLogs(int userId)
+    {
+        _loadingLogs = true;
+        try
+        {
+            _logsResult = await AdminDashboardService.GetLogsAsync(
+                TimeRange.LastYear,
+                _logsPage,
+                PageSize);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading logs: {ex.Message}");
+        }
+        finally
+        {
+            _loadingLogs = false;
+        }
+    }
+
+    private void ShowEditBalanceModal(string type)
+    {
+        _balanceType = type;
+        _newBalanceValue = type == "physical" ? _userProfile.BalancePhysical : _userProfile.BalanceCrypto;
+        _showEditModal = true;
+    }
+
+    private void CloseEditModal()
+    {
+        _showEditModal = false;
+        _newBalanceValue = 0;
+    }
+
+    private async Task SaveBalance()
+    {
+        if (_userProfile == null || !int.TryParse(UserId, out var userId))
+            return;
+
+        _savingBalance = true;
+        try
+        {
+            double newPhysical = _balanceType == "physical" ? _newBalanceValue : _userProfile.BalancePhysical;
+            double newCrypto = _balanceType == "physical" ? _userProfile.BalanceCrypto : _newBalanceValue;
+
+            var success = await AdminUserService.UpdateUserBalanceAsync(userId, newPhysical, newCrypto);
+            
+            if (success)
+            {
+                // Refresh user profile
+                await LoadUserProfile(userId);
+                CloseEditModal();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating balance: {ex.Message}");
+        }
+        finally
+        {
+            _savingBalance = false;
+        }
+    }
+
+    private async Task ApplyGameFilters()
+    {
+        if (int.TryParse(UserId, out var userId))
+        {
+            _gameQuery.FromUtc = _gameFromLocal.HasValue ? LocalToUtc(_gameFromLocal.Value) : null;
+            _gameQuery.ToUtc = _gameToLocal.HasValue ? LocalToUtc(_gameToLocal.Value) : null;
+            _gameQuery.MinBetAmount = _gameMinBet;
+            _gamePage = 1;
+            await LoadGameHistory(userId);
+        }
+    }
+
+    private async Task ResetGameFilters()
+    {
+        _gameQuery = new GameHistoryQuery { GameType = GameTypeFilter.All, Result = GameResultFilter.All };
+        _gameFromLocal = null;
+        _gameToLocal = null;
+        _gameMinBet = null;
+        _gamePage = 1;
+        
+        if (int.TryParse(UserId, out var userId))
+        {
+            await LoadGameHistory(userId);
+        }
+    }
+
+    private async Task ApplyTxFilters()
+    {
+        if (int.TryParse(UserId, out var userId))
+        {
+            _txQuery.FromUtc = _txFromLocal.HasValue ? LocalToUtc(_txFromLocal.Value) : null;
+            _txQuery.ToUtc = _txToLocal.HasValue ? LocalToUtc(_txToLocal.Value) : null;
+            _txQuery.MinDepositEur = _txMinDeposit;
+            _txPage = 1;
+            await LoadTransactionHistory(userId);
+        }
+    }
+
+    private async Task ResetTxFilters()
+    {
+        _txQuery = new TransactionHistoryQuery { Action = TransactionActionFilter.All, Type = TransactionTypeFilter.All };
+        _txFromLocal = null;
+        _txToLocal = null;
+        _txMinDeposit = null;
+        _txPage = 1;
+        
+        if (int.TryParse(UserId, out var userId))
+        {
+            await LoadTransactionHistory(userId);
+        }
+    }
+
+    private async Task ChangeGamePage(int delta)
+    {
+        _gamePage += delta;
+        if (int.TryParse(UserId, out var userId))
+        {
+            await LoadGameHistory(userId);
+        }
+    }
+
+    private async Task ChangeTxPage(int delta)
+    {
+        _txPage += delta;
+        if (int.TryParse(UserId, out var userId))
+        {
+            await LoadTransactionHistory(userId);
+        }
+    }
+
+    private async Task LoadMoreLogs()
+    {
+        _logsPage++;
+        if (int.TryParse(UserId, out var userId))
+        {
+            await LoadUserLogs(userId);
+        }
+    }
+
+    private async Task ToggleBanUser()
+    {
+        if (_userProfile != null && int.TryParse(UserId, out var userId))
+        {
+            var success = await AdminUserService.ToggleUserSuspensionAsync(userId);
+            if (success)
+            {
+                await LoadUserProfile(userId);
+            }
+        }
+    }
+
+    private async Task ToggleAdminRole()
+    {
+        if (_userProfile != null && int.TryParse(UserId, out var userId))
+        {
+            var success = await AdminUserService.ToggleAdminRoleAsync(userId);
+            if (success)
+            {
+                await LoadUserProfile(userId);
+            }
+        }
+    }
+
+    private static DateTime LocalToUtc(DateTime local)
+        => DateTime.SpecifyKind(local, DateTimeKind.Local).ToUniversalTime();
+
+    private static DateTime ToLocal(DateTime utc)
+        => DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime();
+
+    private static string FormatEur(double eur)
+        => eur.ToString("0.00") + " €";
+
+    private string GetResultClass(string result)
+    {
+        return result.ToLower() switch
+        {
+            "win" => "result-win",
+            "loss" => "result-loss",
+            "draw" => "result-draw",
+            _ => ""
+        };
+    }
+
+    private string GetWinAmountClass(double winAmount)
+    {
+        return winAmount > 0 ? "win-positive" : "";
+    }
+}

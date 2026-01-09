@@ -1,0 +1,980 @@
+@page "/admin/settings"
+@using System.Security.Claims
+@using CoinDrop
+@using CoinDrop.services.interfaces
+@using WebApp.services.dtos
+@using Microsoft.AspNetCore.Identity
+@using Domain
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+@inject ISystemSettingsService SettingsService
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<ApplicationUser> UserManager
+
+<div class="admin-settings-page">
+    <div class="panel">
+        <div class="panel-title">
+          
+            SYSTEM SETTINGS
+        </div>
+
+        <!-- Feedback Messages -->
+        @if (!string.IsNullOrEmpty(_successMessage))
+        {
+            <div class="alert alert-success">
+                @_successMessage
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <div class="alert alert-danger">
+                @_errorMessage
+            </div>
+        }
+
+        <!-- Loading State -->
+        @if (!_isInitialized)
+        {
+            <div class="loading">Loading settings...</div>
+        }
+        else
+        {
+            <!-- Game Configuration Section -->
+            <div class="section">
+                <div class="section-title">🎮 GAME CONFIGURATION</div>
+                
+                @if (_gameConfigs == null)
+                {
+                    <div class="loading">Loading game configurations...</div>
+                }
+                else
+                {
+                    <div class="config-grid">
+                        @foreach (var config in _gameConfigs)
+                        {
+                            var gameKey = $"game-{config.GameType}";
+                            var hasMinError = _errors.ContainsKey($"{gameKey}-min");
+                            var hasMaxError = _errors.ContainsKey($"{gameKey}-max");
+                            
+                            <div class="config-card">
+                                <div class="config-header">
+                                    <h3>@config.GameType</h3>
+                                    <div class="config-status @(config.IsActive ? "active" : "inactive")">
+                                        @(config.IsActive ? "ACTIVE" : "INACTIVE")
+                                    </div>
+                                </div>
+                                
+                                <div class="config-fields">
+                                    <div class="field">
+                                        <label>Min Bet (EUR)</label>
+                                        <input type="text" 
+                                               @bind-value="@_tempValues[$"{gameKey}-min"]"
+                                               @bind-value:event="oninput"
+                                               placeholder="Enter min bet"
+                                               class="@(hasMinError ? "input-error" : "")" />
+                                        @if (hasMinError)
+                                        {
+                                            <div class="error-text">@_errors[$"{gameKey}-min"]</div>
+                                        }
+                                    </div>
+                                    
+                                    <div class="field">
+                                        <label>Max Bet (EUR)</label>
+                                        <input type="text" 
+                                               @bind-value="@_tempValues[$"{gameKey}-max"]"
+                                               @bind-value:event="oninput"
+                                               placeholder="Enter max bet"
+                                               class="@(hasMaxError ? "input-error" : "")" />
+                                        @if (hasMaxError)
+                                        {
+                                            <div class="error-text">@_errors[$"{gameKey}-max"]</div>
+                                        }
+                                    </div>
+                                    
+                                    <div class="field checkbox-field">
+                                        <label>
+                                            <input type="checkbox" 
+                                                   checked="@config.IsActive"
+                                                   @onchange="@(e => { config.IsActive = (bool)e.Value!; StateHasChanged(); })" />
+                                            Active
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="config-actions">
+                                    <button class="btn-primary" 
+                                            @onclick="() => SaveGameConfig(config, gameKey)">
+                                        Save Changes
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- Crypto Fees Section -->
+            <div class="section">
+                <div class="section-title">💱 CRYPTO FEES (SOLANA)</div>
+                
+                @if (_cryptoFees == null)
+                {
+                    <div class="loading">Loading crypto fees...</div>
+                }
+                else
+                {
+                    <div class="crypto-fees-section">
+                        @foreach (var fee in _cryptoFees)
+                        {
+                            var feeKey = $"fee-{fee.Asset}";
+                            var hasDepositError = _errors.ContainsKey($"{feeKey}-deposit");
+                            var hasWithdrawalError = _errors.ContainsKey($"{feeKey}-withdrawal");
+                            var hasMinFeeError = _errors.ContainsKey($"{feeKey}-minfee");
+                            var hasMaxFeeError = _errors.ContainsKey($"{feeKey}-maxfee");
+                            
+                            <div class="config-card">
+                                <div class="config-header">
+                                    <h3>@fee.Asset (@fee.Network)</h3>
+                                    <div class="config-status @(fee.IsActive ? "active" : "inactive")">
+                                        @(fee.IsActive ? "ACTIVE" : "INACTIVE")
+                                    </div>
+                                </div>
+                                
+                                <div class="config-fields">
+                                    <div class="field">
+                                        <label>Deposit Fee (%)</label>
+                                        <input type="text" 
+                                               @bind-value="@_tempValues[$"{feeKey}-deposit"]"
+                                               @bind-value:event="oninput"
+                                               placeholder="Enter deposit fee %"
+                                               class="@(hasDepositError ? "input-error" : "")" />
+                                        @if (hasDepositError)
+                                        {
+                                            <div class="error-text">@_errors[$"{feeKey}-deposit"]</div>
+                                        }
+                                    </div>
+                                    
+                                    <div class="field">
+                                        <label>Withdrawal Fee (%)</label>
+                                        <input type="text" 
+                                               @bind-value="@_tempValues[$"{feeKey}-withdrawal"]"
+                                               @bind-value:event="oninput"
+                                               placeholder="Enter withdrawal fee %"
+                                               class="@(hasWithdrawalError ? "input-error" : "")" />
+                                        @if (hasWithdrawalError)
+                                        {
+                                            <div class="error-text">@_errors[$"{feeKey}-withdrawal"]</div>
+                                        }
+                                    </div>
+                                    
+                                    <div class="field">
+                                        <label>Min Fee (EUR)</label>
+                                        <input type="text" 
+                                               @bind-value="@_tempValues[$"{feeKey}-minfee"]"
+                                               @bind-value:event="oninput"
+                                               placeholder="Enter min fee"
+                                               class="@(hasMinFeeError ? "input-error" : "")" />
+                                        @if (hasMinFeeError)
+                                        {
+                                            <div class="error-text">@_errors[$"{feeKey}-minfee"]</div>
+                                        }
+                                    </div>
+                                    
+                                    <div class="field">
+                                        <label>Max Fee (EUR)</label>
+                                        <input type="text" 
+                                               @bind-value="@_tempValues[$"{feeKey}-maxfee"]"
+                                               @bind-value:event="oninput"
+                                               placeholder="Enter max fee"
+                                               class="@(hasMaxFeeError ? "input-error" : "")" />
+                                        @if (hasMaxFeeError)
+                                        {
+                                            <div class="error-text">@_errors[$"{feeKey}-maxfee"]</div>
+                                        }
+                                    </div>
+                                    
+                                    <div class="field checkbox-field">
+                                        <label>
+                                            <input type="checkbox" 
+                                                   checked="@fee.IsActive"
+                                                   @onchange="@(e => { fee.IsActive = (bool)e.Value!; StateHasChanged(); })" />
+                                            Active
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="config-actions">
+                                    <button class="btn-primary" 
+                                            @onclick="() => SaveCryptoFee(fee, feeKey)">
+                                        Save Changes
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- Limits Section -->
+            <div class="section">
+                <div class="section-title">📊 TRANSACTION LIMITS</div>
+                
+                @if (_limits == null)
+                {
+                    <div class="loading">Loading limits...</div>
+                }
+                else
+                {
+                    <div class="config-card wide-card">
+                        <div class="config-fields grid-2">
+                            <div class="field">
+                                <label>Min Deposit (EUR)</label>
+                                <input type="text" 
+                                       @bind-value="@_tempValues["limit-mindeposit"]"
+                                       @bind-value:event="oninput"
+                                       placeholder="Enter min deposit"
+                                       class="@(_errors.ContainsKey("limit-mindeposit") ? "input-error" : "")" />
+                                @if (_errors.ContainsKey("limit-mindeposit"))
+                                {
+                                    <div class="error-text">@_errors["limit-mindeposit"]</div>
+                                }
+                            </div>
+                            
+                            <div class="field">
+                                <label>Min Withdrawal (EUR)</label>
+                                <input type="text" 
+                                       @bind-value="@_tempValues["limit-minwithdrawal"]"
+                                       @bind-value:event="oninput"
+                                       placeholder="Enter min withdrawal"
+                                       class="@(_errors.ContainsKey("limit-minwithdrawal") ? "input-error" : "")" />
+                                @if (_errors.ContainsKey("limit-minwithdrawal"))
+                                {
+                                    <div class="error-text">@_errors["limit-minwithdrawal"]</div>
+                                }
+                            </div>
+                            
+                            <div class="field">
+                                <label>Max Daily Withdrawal (EUR)</label>
+                                <input type="text" 
+                                       @bind-value="@_tempValues["limit-maxdaily"]"
+                                       @bind-value:event="oninput"
+                                       placeholder="Enter max daily withdrawal"
+                                       class="@(_errors.ContainsKey("limit-maxdaily") ? "input-error" : "")" />
+                                @if (_errors.ContainsKey("limit-maxdaily"))
+                                {
+                                    <div class="error-text">@_errors["limit-maxdaily"]</div>
+                                }
+                            </div>
+                            
+                            <div class="field">
+                                <label>Max Monthly Withdrawal (EUR)</label>
+                                <input type="text" 
+                                       @bind-value="@_tempValues["limit-maxmonthly"]"
+                                       @bind-value:event="oninput"
+                                       placeholder="Enter max monthly withdrawal"
+                                       class="@(_errors.ContainsKey("limit-maxmonthly") ? "input-error" : "")" />
+                                @if (_errors.ContainsKey("limit-maxmonthly"))
+                                {
+                                    <div class="error-text">@_errors["limit-maxmonthly"]</div>
+                                }
+                            </div>
+                        </div>
+                        
+                        <div class="config-actions">
+                            <button class="btn-primary" @onclick="SaveLimits">
+                                Save Limits
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- All Settings Table (Read-only) -->
+            <div class="section">
+                <div class="section-title">📋 ALL SYSTEM SETTINGS (READ-ONLY)</div>
+                
+                @if (_allSettings == null)
+                {
+                    <div class="loading">Loading all settings...</div>
+                }
+                else if (_allSettings.Count == 0)
+                {
+                    <div class="empty">No settings found</div>
+                }
+                else
+                {
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Key</th>
+                                    <th>Value</th>
+                                    <th>Type</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th>Last Modified (GMT)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var setting in _allSettings)
+                                {
+                                    <tr>
+                                        <td><span class="category-badge">@setting.Category</span></td>
+                                        <td class="monospace">@setting.SettingKey</td>
+                                        <td>
+                                            @if (setting.DataType == "boolean")
+                                            {
+                                                <span class="bool-value @(setting.SettingValue == "true" ? "true" : "false")">
+                                                    @setting.SettingValue
+                                                </span>
+                                            }
+                                            else if (setting.DataType == "number")
+                                            {
+                                                <span class="num-value">@setting.SettingValue</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@setting.SettingValue</span>
+                                            }
+                                        </td>
+                                        <td><span class="type-badge">@setting.DataType</span></td>
+                                        <td class="wrap-cell">@setting.Description</td>
+                                        <td>
+                                            <span class="status-badge @(setting.IsActive ? "active" : "inactive")">
+                                                @(setting.IsActive ? "ACTIVE" : "INACTIVE")
+                                            </span>
+                                        </td>
+                                        <td>@setting.LastModified.ToString("dd.MM.yyyy HH:mm")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<GameConfigDto>? _gameConfigs;
+    private List<CryptoFeeDto>? _cryptoFees;
+    private LimitsDto? _limits;
+    private List<SystemSettingDto>? _allSettings;
+    
+    private Dictionary<string, string> _tempValues = new();
+    private Dictionary<string, string> _errors = new();
+    
+    private bool _isInitialized = false;
+    
+    private int _adminUserId = 0;
+    
+    private string _successMessage = "";
+    private string _errorMessage = "";
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await GetCurrentUserIdAsync();
+        await LoadAllData();
+        _isInitialized = true;
+    }
+    
+    private async Task GetCurrentUserIdAsync()
+    {
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = state.User;
+
+            if (user?.Identity?.IsAuthenticated != true)
+            {
+                _adminUserId = 0;
+                return;
+            }
+
+            var idStr = user.FindFirstValue(ClaimTypes.NameIdentifier) 
+                      ?? user.FindFirstValue("sub") 
+                      ?? user.FindFirstValue("userid");
+
+            if (int.TryParse(idStr, out var userId))
+            {
+                _adminUserId = userId;
+                
+                var userEntity = await UserManager.FindByIdAsync(userId.ToString());
+                if (userEntity != null)
+                {
+                    var isAdmin = await UserManager.IsInRoleAsync(userEntity, "admin");
+                    if (!isAdmin)
+                    {
+                        _adminUserId = 0;
+                        Nav.NavigateTo("/");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error getting user ID: {ex.Message}");
+            _adminUserId = 0;
+        }
+    }
+    
+    private async Task LoadAllData()
+    {
+        try
+        {
+            if (_adminUserId == 0) return;
+            
+            _gameConfigs = await SettingsService.GetAllGameConfigsAsync();
+            _cryptoFees = await SettingsService.GetAllCryptoFeesAsync();
+            _limits = await SettingsService.GetLimitsAsync();
+            _allSettings = await SettingsService.GetAllSettingsAsync();
+            
+            InitializeTempValues();
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Error loading settings: {ex.Message}");
+        }
+    }
+    
+    private void InitializeTempValues()
+    {
+        if (_gameConfigs != null)
+        {
+            foreach (var config in _gameConfigs)
+            {
+                var key = $"game-{config.GameType}";
+                _tempValues[$"{key}-min"] = config.MinBet.ToString("F2");
+                _tempValues[$"{key}-max"] = config.MaxBet.ToString("F2");
+            }
+        }
+        
+        if (_cryptoFees != null)
+        {
+            foreach (var fee in _cryptoFees)
+            {
+                var key = $"fee-{fee.Asset}";
+                _tempValues[$"{key}-deposit"] = fee.DepositFeePercent.ToString("F2");
+                _tempValues[$"{key}-withdrawal"] = fee.WithdrawalFeePercent.ToString("F2");
+                _tempValues[$"{key}-minfee"] = fee.MinFeeEur.ToString("F2");
+                _tempValues[$"{key}-maxfee"] = fee.MaxFeeEur.ToString("F2");
+            }
+        }
+        
+        if (_limits != null)
+        {
+            _tempValues["limit-mindeposit"] = _limits.MinDepositEur.ToString("F2");
+            _tempValues["limit-minwithdrawal"] = _limits.MinWithdrawalEur.ToString("F2");
+            _tempValues["limit-maxdaily"] = _limits.MaxDailyWithdrawalEur.ToString("F2");
+            _tempValues["limit-maxmonthly"] = _limits.MaxMonthlyWithdrawalEur.ToString("F2");
+        }
+    }
+    
+    private async Task SaveGameConfig(GameConfigDto config, string gameKey)
+    {
+        if (_adminUserId == 0) return;
+        
+        // Clear previous errors
+        _errors.Clear();
+        ClearMessages();
+        
+        // Get values
+        var minBetStr = _tempValues.GetValueOrDefault($"{gameKey}-min", "");
+        var maxBetStr = _tempValues.GetValueOrDefault($"{gameKey}-max", "");
+        
+        // Validate
+        bool hasError = false;
+        double minBet = 0;
+        double maxBet = 0;
+        
+        // Min bet validation
+        if (string.IsNullOrWhiteSpace(minBetStr))
+        {
+            _errors[$"{gameKey}-min"] = "Min bet is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(minBetStr, out minBet))
+        {
+            _errors[$"{gameKey}-min"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (minBet < 0)
+        {
+            _errors[$"{gameKey}-min"] = "Cannot be negative";
+            hasError = true;
+        }
+        
+        // Max bet validation
+        if (string.IsNullOrWhiteSpace(maxBetStr))
+        {
+            _errors[$"{gameKey}-max"] = "Max bet is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(maxBetStr, out maxBet))
+        {
+            _errors[$"{gameKey}-max"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (maxBet < 0)
+        {
+            _errors[$"{gameKey}-max"] = "Cannot be negative";
+            hasError = true;
+        }
+        
+        // Cross validation
+        if (!hasError)
+        {
+            if (maxBet <= minBet)
+            {
+                _errors[$"{gameKey}-max"] = "Must be greater than min bet";
+                hasError = true;
+            }
+        }
+        
+        if (hasError)
+        {
+            ShowError("Please fix validation errors");
+            StateHasChanged();
+            return;
+        }
+        
+        // Update config
+        config.MinBet = minBet;
+        config.MaxBet = maxBet;
+        
+        try
+        {
+            await SettingsService.UpdateGameConfigAsync(config, _adminUserId);
+            ShowSuccess($"{config.GameType} config saved successfully!");
+            await LoadAllData();
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Error saving {config.GameType}: {ex.Message}");
+        }
+    }
+    
+    private async Task SaveCryptoFee(CryptoFeeDto fee, string feeKey)
+    {
+        if (_adminUserId == 0) return;
+        
+        _errors.Clear();
+        ClearMessages();
+        
+        // Get values
+        var depositStr = _tempValues.GetValueOrDefault($"{feeKey}-deposit", "");
+        var withdrawalStr = _tempValues.GetValueOrDefault($"{feeKey}-withdrawal", "");
+        var minFeeStr = _tempValues.GetValueOrDefault($"{feeKey}-minfee", "");
+        var maxFeeStr = _tempValues.GetValueOrDefault($"{feeKey}-maxfee", "");
+        
+        // Validate
+        bool hasError = false;
+        double deposit = 0;
+        double withdrawal = 0;
+        double minFee = 0;
+        double maxFee = 0;
+        
+        // Deposit fee
+        if (string.IsNullOrWhiteSpace(depositStr))
+        {
+            _errors[$"{feeKey}-deposit"] = "Deposit fee is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(depositStr, out deposit))
+        {
+            _errors[$"{feeKey}-deposit"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (deposit < 0 || deposit > 100)
+        {
+            _errors[$"{feeKey}-deposit"] = "Must be between 0 and 100";
+            hasError = true;
+        }
+        
+        // Withdrawal fee
+        if (string.IsNullOrWhiteSpace(withdrawalStr))
+        {
+            _errors[$"{feeKey}-withdrawal"] = "Withdrawal fee is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(withdrawalStr, out withdrawal))
+        {
+            _errors[$"{feeKey}-withdrawal"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (withdrawal < 0 || withdrawal > 100)
+        {
+            _errors[$"{feeKey}-withdrawal"] = "Must be between 0 and 100";
+            hasError = true;
+        }
+        
+        // Min fee
+        if (string.IsNullOrWhiteSpace(minFeeStr))
+        {
+            _errors[$"{feeKey}-minfee"] = "Min fee is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(minFeeStr, out minFee))
+        {
+            _errors[$"{feeKey}-minfee"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (minFee < 0)
+        {
+            _errors[$"{feeKey}-minfee"] = "Cannot be negative";
+            hasError = true;
+        }
+        
+        // Max fee
+        if (string.IsNullOrWhiteSpace(maxFeeStr))
+        {
+            _errors[$"{feeKey}-maxfee"] = "Max fee is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(maxFeeStr, out maxFee))
+        {
+            _errors[$"{feeKey}-maxfee"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (maxFee < 0)
+        {
+            _errors[$"{feeKey}-maxfee"] = "Cannot be negative";
+            hasError = true;
+        }
+        
+        // Cross validation
+        if (!hasError)
+        {
+            if (maxFee <= minFee)
+            {
+                _errors[$"{feeKey}-maxfee"] = "Must be greater than min fee";
+                hasError = true;
+            }
+        }
+        
+        if (hasError)
+        {
+            ShowError("Please fix validation errors");
+            StateHasChanged();
+            return;
+        }
+        
+        // Update fee
+        fee.DepositFeePercent = deposit;
+        fee.WithdrawalFeePercent = withdrawal;
+        fee.MinFeeEur = minFee;
+        fee.MaxFeeEur = maxFee;
+        
+        try
+        {
+            await SettingsService.UpdateCryptoFeeAsync(fee, _adminUserId);
+            ShowSuccess($"{fee.Asset} fees saved successfully!");
+            await LoadAllData();
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Error saving {fee.Asset} fees: {ex.Message}");
+        }
+    }
+    
+    private async Task SaveLimits()
+    {
+        if (_limits == null || _adminUserId == 0) return;
+        
+        _errors.Clear();
+        ClearMessages();
+        
+        // Get values
+        var minDepositStr = _tempValues.GetValueOrDefault("limit-mindeposit", "");
+        var minWithdrawalStr = _tempValues.GetValueOrDefault("limit-minwithdrawal", "");
+        var maxDailyStr = _tempValues.GetValueOrDefault("limit-maxdaily", "");
+        var maxMonthlyStr = _tempValues.GetValueOrDefault("limit-maxmonthly", "");
+        
+        // Validate
+        bool hasError = false;
+        double minDeposit = 0;
+        double minWithdrawal = 0;
+        double maxDaily = 0;
+        double maxMonthly = 0;
+        
+        // Min deposit
+        if (string.IsNullOrWhiteSpace(minDepositStr))
+        {
+            _errors["limit-mindeposit"] = "Min deposit is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(minDepositStr, out minDeposit))
+        {
+            _errors["limit-mindeposit"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (minDeposit < 0)
+        {
+            _errors["limit-mindeposit"] = "Cannot be negative";
+            hasError = true;
+        }
+        
+        // Min withdrawal
+        if (string.IsNullOrWhiteSpace(minWithdrawalStr))
+        {
+            _errors["limit-minwithdrawal"] = "Min withdrawal is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(minWithdrawalStr, out minWithdrawal))
+        {
+            _errors["limit-minwithdrawal"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (minWithdrawal < 0)
+        {
+            _errors["limit-minwithdrawal"] = "Cannot be negative";
+            hasError = true;
+        }
+        
+        // Max daily
+        if (string.IsNullOrWhiteSpace(maxDailyStr))
+        {
+            _errors["limit-maxdaily"] = "Max daily is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(maxDailyStr, out maxDaily))
+        {
+            _errors["limit-maxdaily"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (maxDaily < 0)
+        {
+            _errors["limit-maxdaily"] = "Cannot be negative";
+            hasError = true;
+        }
+        
+        // Max monthly
+        if (string.IsNullOrWhiteSpace(maxMonthlyStr))
+        {
+            _errors["limit-maxmonthly"] = "Max monthly is required";
+            hasError = true;
+        }
+        else if (!double.TryParse(maxMonthlyStr, out maxMonthly))
+        {
+            _errors["limit-maxmonthly"] = "Must be a valid number";
+            hasError = true;
+        }
+        else if (maxMonthly < 0)
+        {
+            _errors["limit-maxmonthly"] = "Cannot be negative";
+            hasError = true;
+        }
+        
+        if (hasError)
+        {
+            ShowError("Please fix validation errors");
+            StateHasChanged();
+            return;
+        }
+        
+        // Update limits
+        _limits.MinDepositEur = minDeposit;
+        _limits.MinWithdrawalEur = minWithdrawal;
+        _limits.MaxDailyWithdrawalEur = maxDaily;
+        _limits.MaxMonthlyWithdrawalEur = maxMonthly;
+        
+        try
+        {
+            await SettingsService.UpdateLimitsAsync(_limits, _adminUserId);
+            ShowSuccess("Transaction limits saved successfully!");
+            await LoadAllData();
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Error saving limits: {ex.Message}");
+        }
+    }
+    
+    private void ShowSuccess(string message)
+    {
+        _successMessage = message;
+        _errorMessage = "";
+        StateHasChanged();
+        
+        // Auto hide after 3 seconds
+        Task.Delay(3000).ContinueWith(_ => 
+        {
+            ClearMessages();
+            StateHasChanged();
+        });
+    }
+    
+    private void ShowError(string message)
+    {
+        _errorMessage = message;
+        _successMessage = "";
+        StateHasChanged();
+    }
+    
+    private void ClearMessages()
+    {
+        _successMessage = "";
+        _errorMessage = "";
+    }
+}
+
+<style>
+    /* Entferne Pfeile komplett */
+    input[type="text"]::-webkit-inner-spin-button,
+    input[type="text"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    
+    input[type="text"] {
+        -moz-appearance: textfield;
+    }
+    
+    /* Error styling */
+    .input-error {
+        border-color: #dc3545 !important;
+        background-color: #fff8f8 !important;
+    }
+    
+    .error-text {
+        color: #dc3545;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+    }
+    
+    /* Alert messages */
+    .alert {
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-radius: 4px;
+        font-weight: 500;
+    }
+    
+    .alert-success {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+    }
+    
+    .alert-danger {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+    }
+    
+    /* Config layout */
+    .config-actions {
+        margin-top: 1rem;
+        text-align: right;
+    }
+    
+    .config-card .field input {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 1rem;
+    }
+    
+    .config-card .field input:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    
+    .checkbox-field {
+        margin-top: 1rem;
+    }
+    
+    /* Table styling */
+    .table-container {
+        overflow-x: auto;
+        margin-top: 1rem;
+    }
+    
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .data-table th {
+        background-color: #f8f9fa;
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 2px solid #dee2e6;
+        font-weight: 600;
+    }
+    
+    .data-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .data-table tr:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .category-badge {
+        background-color: #e9ecef;
+        padding: 0.25rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    
+    .type-badge {
+        background-color: #d1ecf1;
+        color: #0c5460;
+        padding: 0.25rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    
+    .status-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    
+    .status-badge.active {
+        background-color: #d4edda;
+        color: #155724;
+    }
+    
+    .status-badge.inactive {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
+    
+    .bool-value.true {
+        color: #28a745;
+        font-weight: 600;
+    }
+    
+    .bool-value.false {
+        color: #dc3545;
+        font-weight: 600;
+    }
+    
+    .num-value {
+        font-family: 'Courier New', monospace;
+        font-weight: 600;
+    }
+    
+    .monospace {
+        font-family: 'Courier New', monospace;
+    }
+    
+    .wrap-cell {
+        max-width: 300px;
+        word-wrap: break-word;
+    }
+</style>

@@ -1,0 +1,373 @@
+@page "/admin/users"
+@using CoinDrop
+@using CoinDrop.services.interfaces
+@using Microsoft.AspNetCore.Authorization
+@rendermode InteractiveServer
+@inject IAdminUserService AdminService
+@inject NavigationManager Navigation
+@attribute [Authorize(Roles = "admin")]
+
+<PageTitle>CoinDrop - User Management</PageTitle>
+
+<div class="admin-users-container">
+    <div class="admin-header">
+        <h1><i class="fas fa-users"></i> User Management</h1>
+        <div class="admin-stats">
+            <span class="stat-item">
+                <i class="fas fa-user"></i> Total Users: @_totalCount
+            </span>
+            <span class="stat-item">
+                <i class="fas fa-user-shield"></i> Page: @_currentPage / @_totalPages
+            </span>
+        </div>
+    </div>
+
+    <!-- Such- und Filterbereich -->
+    <div class="search-filter-container">
+        <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input @bind="_searchTerm" 
+                   @bind:event="oninput"
+                   placeholder="Search by email or username..."
+                   class="search-input" />
+            <button @onclick="RefreshData" class="search-btn">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+        
+        <div class="sort-controls">
+            <select @bind="_sortBy" class="sort-select">
+                <option value="CreatedAt">Registration Date</option>
+                <option value="Email">Email</option>
+                <option value="UserName">Username</option>
+                <option value="BalancePhysical">Physical Balance</option>
+                <option value="BalanceCrypto">Crypto Balance</option>
+                <option value="TotalBalance">Total Balance</option>
+            </select>
+            
+            <button @onclick="ToggleSortOrder" class="sort-order-btn">
+                <i class="@(_sortDescending ? "fas fa-sort-amount-down" : "fas fa-sort-amount-up")"></i>
+                @(_sortDescending ? "Descending" : "Ascending")
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    @if (_isLoading)
+    {
+        <div class="loading-container">
+            <div class="spinner"></div>
+            <p>Loading users...</p>
+        </div>
+    }
+    else
+    {
+        <!-- Users Table -->
+        <div class="users-table-container">
+            <table class="users-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Email</th>
+                        <th>Username</th>
+                        <th>Registration</th>
+                        <th>Physical Balance</th>
+                        <th>Crypto Balance</th>
+                        <th>Total Balance</th>
+                        <th>Last Action</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var userInfo in _userList)
+                    {
+                        <tr class="@(userInfo.IsBanned ? "banned-user" : "") @(userInfo.IsAdmin ? "admin-user" : "")">
+                            <td>@userInfo.User.Id</td>
+                            <td>@userInfo.User.Email</td>
+                            <td>@userInfo.User.UserName</td>
+                            <td>@userInfo.User.CreatedAt.ToString("dd.MM.yyyy HH:mm")</td>
+                            <td class="balance">@userInfo.User.BalancePhysical.ToString("F2") €</td>
+                            <td class="balance">@userInfo.User.BalanceCrypto.ToString("F2")</td>
+                            <td class="total-balance">@userInfo.User.TotalBalance.ToString("F2")</td>
+                            <td class="last-action">@userInfo.LastAction</td>
+                            <td class="user-status">
+                                @if (userInfo.IsAdmin)
+                                {
+                                    <span class="status-badge admin-badge">
+                                        <i class="fas fa-user-shield"></i> Admin
+                                    </span>
+                                }
+                                @if (userInfo.IsBanned)
+                                {
+                                    <span class="status-badge banned-badge">
+                                        <i class="fas fa-user-slash"></i> Banned
+                                    </span>
+                                }
+                                @if (!userInfo.IsAdmin && !userInfo.IsBanned)
+                                {
+                                    <span class="status-badge user-badge">
+                                        <i class="fas fa-user"></i> User
+                                    </span>
+                                }
+                            </td>
+                            <td class="action-buttons">
+                                <button @onclick="() => ToggleBan(userInfo.User.Id)" 
+                                        class="btn-action @(userInfo.IsBanned ? "btn-unban" : "btn-ban")"
+                                        title="@(userInfo.IsBanned ? "Unban User" : "Ban User")">
+                                    <i class="@(userInfo.IsBanned ? "fas fa-user-check" : "fas fa-user-slash")"></i>
+                                </button>
+                                
+                                <button @onclick="() => ToggleAdmin(userInfo.User.Id)" 
+                                        class="btn-action @(userInfo.IsAdmin ? "btn-demote" : "btn-promote")"
+                                        title="@(userInfo.IsAdmin ? "Remove Admin" : "Make Admin")">
+                                    <i class="@(userInfo.IsAdmin ? "fas fa-user-tag" : "fas fa-user-shield")"></i>
+                                </button>
+                                
+                                <a href="/admin/users/@userInfo.User.Id" class="btn-action btn-details" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            
+            @if (!_userList.Any())
+            {
+                <div class="no-results">
+                    <i class="fas fa-users-slash"></i>
+                    <p>No users found</p>
+                </div>
+            }
+        </div>
+
+        <!-- Pagination -->
+        @if (_totalPages > 1)
+        {
+            <div class="pagination">
+                <button @onclick="() => ChangePage(1)" 
+                        disabled="@(_currentPage == 1)"
+                        class="page-btn @(_currentPage == 1 ? "disabled" : "")">
+                    <i class="fas fa-angle-double-left"></i>
+                </button>
+                
+                <button @onclick="() => ChangePage(_currentPage - 1)" 
+                        disabled="@(_currentPage == 1)"
+                        class="page-btn @(_currentPage == 1 ? "disabled" : "")">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                
+                @for (int i = Math.Max(1, _currentPage - 2); i <= Math.Min(_totalPages, _currentPage + 2); i++)
+                {
+                    <button @onclick="() => ChangePage(i)" 
+                            class="page-btn @(i == _currentPage ? "active" : "")">
+                        @i
+                    </button>
+                }
+                
+                <button @onclick="() => ChangePage(_currentPage + 1)" 
+                        disabled="@(_currentPage == _totalPages)"
+                        class="page-btn @(_currentPage == _totalPages ? "disabled" : "")">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                
+                <button @onclick="() => ChangePage(_totalPages)" 
+                        disabled="@(_currentPage == _totalPages)"
+                        class="page-btn @(_currentPage == _totalPages ? "disabled" : "")">
+                    <i class="fas fa-angle-double-right"></i>
+                </button>
+                
+                <span class="page-info">
+                    Page @_currentPage of @_totalPages
+                </span>
+            </div>
+        }
+    }
+</div>
+
+@code {
+   private List<UserInfo> _userList = new();
+    private int _currentPage = 1;
+    private int _pageSize = 20;
+    private int _totalCount = 0;
+    private int _totalPages = 0;
+    private string? _searchTerm;
+    private string _sortBy = "CreatedAt";
+    private bool _sortDescending = true;
+    private bool _isLoading = false;
+    private Timer? _debounceTimer;
+
+    // ViewModel-Klasse für alle User-Daten
+    private class UserInfo
+    {
+        public ApplicationUser User { get; set; } = null!;
+        public bool IsAdmin { get; set; }
+        public bool IsBanned { get; set; }
+        public string LastAction { get; set; } = "Loading...";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAllUserData();
+    }
+
+    private async Task LoadAllUserData()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // 1. Benutzerdaten vom Service laden
+            var result = await AdminService.GetUsersAsync(
+                _searchTerm,
+                _sortBy,
+                _sortDescending,
+                _currentPage,
+                _pageSize);
+
+            _totalCount = result.TotalCount;
+            _totalPages = (int)Math.Ceiling(_totalCount / (double)_pageSize);
+
+            // 2. User-IDs für Batch-Loading sammeln
+            var userIds = result.Users.Select(u => u.Id).ToList();
+            
+            // 3. Batch-Loading für Status-Daten
+            var statusData = await AdminService.GetUserStatusBatchAsync(userIds);
+
+            // 4. UserInfo-Liste erstellen
+            _userList = result.Users.Select(user =>
+            {
+                if (statusData.TryGetValue(user.Id, out var status))
+                {
+                    return new UserInfo
+                    {
+                        User = user,
+                        IsAdmin = status.IsAdmin,
+                        IsBanned = status.IsBanned,
+                        LastAction = status.LastAction
+                    };
+                }
+                else
+                {
+                    return new UserInfo
+                    {
+                        User = user,
+                        IsAdmin = false,
+                        IsBanned = false,
+                        LastAction = "Error loading"
+                    };
+                }
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+            // Fallback: Nur Basis-Daten anzeigen
+            if (_userList.Any())
+            {
+                foreach (var userInfo in _userList)
+                {
+                    userInfo.LastAction = "Error loading data";
+                }
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+    private async Task LoadUserStatusAsync(UserInfo userInfo)
+    {
+        try
+        {
+            // Paralleles Laden von Admin-Status, Ban-Status und Last Action
+            var adminTask = AdminService.IsUserAdminAsync(userInfo.User.Id);
+            var bannedTask = AdminService.IsUserBannedAsync(userInfo.User.Id);
+            var lastActionTask = AdminService.GetLastUserActionAsync(userInfo.User.Id);
+
+            await Task.WhenAll(adminTask, bannedTask, lastActionTask);
+
+            userInfo.IsAdmin = await adminTask;
+            userInfo.IsBanned = await bannedTask;
+            userInfo.LastAction = await lastActionTask ?? "No actions yet";
+        }
+        catch (Exception ex)
+        {
+            userInfo.LastAction = "Error loading";
+            // Optional: Logging hier
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        _currentPage = 1;
+        await LoadAllUserData();
+    }
+
+    private async Task DebounceSearch()
+    {
+        _debounceTimer?.Dispose();
+        _debounceTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                _currentPage = 1;
+                await LoadAllUserData();
+            });
+        }, null, 500, Timeout.Infinite);
+    }
+
+    private async Task ToggleSortOrder()
+    {
+        _sortDescending = !_sortDescending;
+        await RefreshData();
+    }
+
+    private async Task ChangePage(int page)
+    {
+        if (page < 1 || page > _totalPages) return;
+        
+        _currentPage = page;
+        await LoadAllUserData();
+    }
+
+    private async Task ToggleBan(int userId)
+    {
+        var success = await AdminService.ToggleUserSuspensionAsync(userId);
+        if (success)
+        {
+            // Direktes Update des Users in der Liste
+            var userInfo = _userList.FirstOrDefault(u => u.User.Id == userId);
+            if (userInfo != null)
+            {
+                userInfo.IsBanned = !userInfo.IsBanned;
+                userInfo.LastAction = await AdminService.GetLastUserActionAsync(userId) ?? "No actions yet";
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task ToggleAdmin(int userId)
+    {
+        var success = await AdminService.ToggleAdminRoleAsync(userId);
+        if (success)
+        {
+            // Direktes Update des Users in der Liste
+            var userInfo = _userList.FirstOrDefault(u => u.User.Id == userId);
+            if (userInfo != null)
+            {
+                userInfo.IsAdmin = !userInfo.IsAdmin;
+                userInfo.LastAction = await AdminService.GetLastUserActionAsync(userId) ?? "No actions yet";
+                StateHasChanged();
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        _debounceTimer?.Dispose();
+    }
+}

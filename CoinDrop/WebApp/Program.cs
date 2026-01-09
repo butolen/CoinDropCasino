@@ -77,12 +77,32 @@ builder.Services.AddScoped<HDepositRepo>();
 builder.Services.AddScoped<CDepositRepo>();
 builder.Services.AddScoped<WithdrawalRepo>();
 builder.Services.AddScoped<LogRepo>();
+builder.Services.AddScoped<IRepository<ApplicationUser>, UserRepo>();
 
+builder.Services.AddScoped<IRepository<GameSession>, GameSessionRepo>();
+builder.Services.AddScoped<IRepository<CryptoDeposit>, CDepositRepo>();
+builder.Services.AddScoped<IRepository<HardwareDeposit>, HDepositRepo>();
+builder.Services.AddScoped<IRepository<Withdrawal>, WithdrawalRepo>();
+builder.Services.AddScoped<IRepository<Log>, LogRepo>();
+builder.Services.AddScoped<IRepository<SystemSetting>, SystemSettingRepository>();
 
 // UserService
+builder.Services.AddScoped<IGameHistoryService, GameHistoryService>();
+builder.Services.AddScoped<ITransactionHistoryService, TransactionHistoryService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ISolanService,SolanaWalletService>();
+builder.Services.AddScoped<SessionCodeService>();
+//admin dahboard 
+
+builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
+builder.Services.AddScoped<IAdminDashboardService, AdminDashboardService>();
+builder.Services.AddScoped<IAdminUserService, AdminUserService>();
+
+// admin seeder
+builder.Services.AddScoped<IIdentitySeeder, IdentitySeeder>();
 //wallet service 
+
+
 
 //crypto
 builder.Services.Configure<CryptoConfig>(
@@ -113,7 +133,7 @@ using (var scope = app.Services.CreateScope())
             await roleManager.CreateAsync(new IdentityRole<int>(role));
     }
 }app.UseHttpsRedirection();
-
+app.UseMiddleware<ForceLogoutMiddleware>();
 // Erst Authentication, dann Authorization
 app.UseAuthentication();
 app.UseAuthorization();
@@ -128,4 +148,10 @@ app.MapRazorComponents<App>()
 app.MapAuthEndpoints();
 app.MapTestEndpoints();
 
+//seeeder ausführen
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<IIdentitySeeder>();
+    await seeder.SeedAsync();
+}
 app.Run();
