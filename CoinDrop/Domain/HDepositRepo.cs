@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 public class HDepositRepo : ARepository<HardwareDeposit>
 {
-    public HDepositRepo(CoinDropContext ctx) : base(ctx) { }
+    public HDepositRepo(IDbContextFactory<CoinDropContext> contextFactory) 
+        : base(contextFactory) { }
 
     
 }

@@ -21,6 +21,9 @@ public interface IRepository<TEntity> where TEntity : class
     // Paging-Version wie im ersten Repo
     Task<IEnumerable<TEntity>> GetAllAsync(int skip, int take, CancellationToken ct = default);
 
+    Task<List<TEntity>> ExecuteQueryAsync(
+        Func<IQueryable<TEntity>, IQueryable<TEntity>> queryBuilder,
+        CancellationToken ct = default);
     // Add (einzeln)
     Task AddAsync(TEntity entity, CancellationToken ct = default);
 

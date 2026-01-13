@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 public class LogRepo : ARepository<Log>
 {
-    public LogRepo(CoinDropContext ctx) : base(ctx) { }
+    public LogRepo(IDbContextFactory<CoinDropContext> contextFactory) 
+        : base(contextFactory) { }
 
 
 }

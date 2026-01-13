@@ -256,30 +256,30 @@
         @if (hasActiveGame && currentGameStatus == "Active")
         {
             <div class="action-buttons">
-                <button class="action-btn hit" @onclick="Hit" 
+                <button class="action-btn hit" @onclick="Hit"
                         disabled="@(isProcessingAction)">
                     <span class="action-btn-icon">🃏</span>
                     HIT
                 </button>
-                
+
                 <button class="action-btn stand" @onclick="Stand"
                         disabled="@(isProcessingAction)">
                     <span class="action-btn-icon">✋</span>
                     STAND
                 </button>
-                
+
                 <button class="action-btn double" @onclick="DoubleDown"
                         disabled="@(!canDoubleDown || isProcessingAction || userBalance < currentGameBet)">
                     <span class="action-btn-icon">⏫</span>
                     DOUBLE
                 </button>
-                
+
                 <button class="action-btn split" @onclick="Split"
                         disabled="@(!canSplit || isProcessingAction || userBalance < currentGameBet)">
                     <span class="action-btn-icon">✂️</span>
                     SPLIT
                 </button>
-                
+
                 <button class="action-btn surrender" @onclick="Surrender"
                         disabled="@(playerCards.Count > 2 || isProcessingAction)">
                     <span class="action-btn-icon">🏳️</span>
@@ -822,4 +822,4 @@
         errorMessage = "";
         resultMessage = "";
     }
-}}
+}

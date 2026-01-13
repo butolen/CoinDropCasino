@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 public class TransactionRepo : ARepository<Transaction>
 {
-    public TransactionRepo(CoinDropContext context) : base(context)
+    public TransactionRepo(IDbContextFactory<CoinDropContext> contextFactory) 
+        : base(contextFactory)
     {
     }
 }

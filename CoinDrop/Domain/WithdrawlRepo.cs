@@ -7,7 +7,8 @@ using Microsoft.EntityFrameworkCore;
 
 public class WithdrawalRepo : ARepository<Withdrawal>
 {
-    public WithdrawalRepo(CoinDropContext ctx) : base(ctx) { }
+    public WithdrawalRepo(IDbContextFactory<CoinDropContext> contextFactory) 
+        : base(contextFactory) { }
 
 
 }
