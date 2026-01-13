@@ -4,6 +4,7 @@ using CoinDrop.services;
 using CoinDrop.services.implementations;
 using CoinDrop.services.interfaces;
 using Domain;
+
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using WebApp.Components;
@@ -23,7 +24,6 @@ builder.Services.AddRazorComponents()
 
 
 
-// EF Core + MySQL
 builder.Services.AddDbContextFactory<CoinDropContext>(options =>
     options.UseMySql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
@@ -97,7 +97,11 @@ builder.Services.AddScoped<SessionCodeService>();
 builder.Services.AddScoped<ISystemSettingsService, SystemSettingsService>();
 builder.Services.AddScoped<IAdminDashboardService, AdminDashboardService>();
 builder.Services.AddScoped<IAdminUserService, AdminUserService>();
-
+//roulett
+builder.Services.AddScoped<IRouletteService,RouletteService>();
+//bj service
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<IBlackjackService, BlackjackService>();
 // admin seeder
 builder.Services.AddScoped<IIdentitySeeder, IdentitySeeder>();
 //wallet service 

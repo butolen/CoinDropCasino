@@ -10,6 +10,12 @@ public interface IUserService
     Task<IdentityResult> RegisterAsync(RegisterRequest request);
     Task<SignInResult> LoginAsync(LoginRequest request);
     Task LogoutAsync();
+
+    Task LogUserActionAsync(
+        int? userId,
+        LogActionType actionType,
+        LogUserType userType,
+        string description);
     Task<ApplicationUser?> GetCurrentUserAsync(ClaimsPrincipal principal);
     Task<IdentityResult> SendPasswordResetLinkByEmailAsync(string email);
     Task<IdentityResult> UploadProfileImageAsync(

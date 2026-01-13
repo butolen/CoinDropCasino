@@ -2,7 +2,9 @@ using System.Net;
 using System.Security.Claims;
 using System.Text;
 using CoinDrop;
+using CoinDrop.services.dtos;
 using CoinDrop.services.interfaces;
+using Domain;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
@@ -19,7 +21,8 @@ public static class AuthEndpoints
             string token,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            ISolanService solanaWalletService) =>
+            ISolanService solanaWalletService,
+            IServiceProvider serviceProvider) =>
         {
             var user = await userManager.FindByIdAsync(userId.ToString());
             if (user == null)
@@ -32,6 +35,14 @@ public static class AuthEndpoints
                 var lockoutEnd = await userManager.GetLockoutEndDateAsync(user);
                 if (lockoutEnd > DateTimeOffset.UtcNow)
                 {
+                    // ✅ Logging für gescheiterte Email-Bestätigung wegen Ban
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        user.Id,
+                        LogActionType.Warning,
+                        LogUserType.User,
+                        $"Email confirmation blocked - account banned: {user.UserName} (ID: {user.Id})");
+                    
                     return Results.Redirect("/login?e=banned");
                 }
             }
@@ -41,7 +52,17 @@ public static class AuthEndpoints
 
             var result = await userManager.ConfirmEmailAsync(user, normalToken);
             if (!result.Succeeded)
+            {
+                // ✅ Logging für fehlgeschlagene Email-Bestätigung
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.Error,
+                    LogUserType.User,
+                    $"Email confirmation failed: {user.UserName} (ID: {user.Id}) - Errors: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                
                 return Results.BadRequest("Email confirmation failed.");
+            }
             
             if (string.IsNullOrWhiteSpace(user.DepositAddress))
             {
@@ -51,6 +72,14 @@ public static class AuthEndpoints
             
             // Nach Bestätigung automatisch einloggen
             await signInManager.SignInAsync(user, isPersistent: false);
+
+            // ✅ Logging für erfolgreiche Email-Bestätigung
+            await LogUserActionAsync(
+                serviceProvider,
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"Email confirmed successfully via confirmation link: {user.UserName} (ID: {user.Id})");
 
             // ForceLogout Token für neuen User setzen
             var logoutToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
@@ -89,19 +118,38 @@ public static class AuthEndpoints
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             RoleManager<IdentityRole<int>> roleManager,
-            ISolanService solService) =>
+            ISolanService solService,
+            IServiceProvider serviceProvider) =>
         {
             returnUrl ??= "/";
 
             var info = await signInManager.GetExternalLoginInfoAsync();
             if (info == null)
             {
+                // ✅ Logging für fehlgeschlagenen External Login
+                await LogUserActionAsync(
+                    serviceProvider,
+                    null,
+                    LogActionType.Error,
+                    LogUserType.System,
+                    $"External login failed - Could not get external login info");
+                
                 return Results.Redirect("/login?error=externallogininfo");
             }
 
             var email = info.Principal.FindFirstValue(ClaimTypes.Email);
             if (string.IsNullOrWhiteSpace(email))
+            {
+                // ✅ Logging für External Login ohne Email
+                await LogUserActionAsync(
+                    serviceProvider,
+                    null,
+                    LogActionType.Error,
+                    LogUserType.System,
+                    $"External login failed - No email claim from provider: {info.LoginProvider}");
+                
                 return Results.Redirect("/login?error=noemail");
+            }
 
             // Existierenden User finden
             var existingUser = await userManager.FindByEmailAsync(email);
@@ -114,6 +162,14 @@ public static class AuthEndpoints
                     var lockoutEnd = await userManager.GetLockoutEndDateAsync(existingUser);
                     if (lockoutEnd > DateTimeOffset.UtcNow)
                     {
+                        // ✅ Logging für gescheiterten External Login wegen Ban
+                        await LogUserActionAsync(
+                            serviceProvider,
+                            existingUser.Id,
+                            LogActionType.Warning,
+                            LogUserType.User,
+                            $"External login blocked - account banned: {existingUser.UserName} (ID: {existingUser.Id}, Provider: {info.LoginProvider})");
+                        
                         return Results.Redirect("/login?e=banned");
                     }
                 }
@@ -127,6 +183,14 @@ public static class AuthEndpoints
 
                 if (loginResult.Succeeded)
                 {
+                    // ✅ Logging für erfolgreichen External Login (existierender User)
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        existingUser.Id,
+                        LogActionType.UserAction,
+                        LogUserType.User,
+                        $"External login successful via {info.LoginProvider}: {existingUser.UserName} (ID: {existingUser.Id}, Email: {existingUser.Email})");
+
                     // ForceLogout Token setzen
                     var serverToken = await userManager.GetAuthenticationTokenAsync(
                         existingUser, "ForceLogout", "Token");
@@ -148,6 +212,16 @@ public static class AuthEndpoints
                     
                     return Results.Redirect(returnUrl);
                 }
+                else
+                {
+                    // ✅ Logging für gescheiterten External Login
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        existingUser.Id,
+                        LogActionType.Warning,
+                        LogUserType.User,
+                        $"External login failed via {info.LoginProvider}: {existingUser.UserName} (ID: {existingUser.Id})");
+                }
             }
 
             // Neuer User (Google/MS Erstlogin)
@@ -163,7 +237,17 @@ public static class AuthEndpoints
 
             var createResult = await userManager.CreateAsync(user);
             if (!createResult.Succeeded)
+            {
+                // ✅ Logging für fehlgeschlagene User-Erstellung
+                await LogUserActionAsync(
+                    serviceProvider,
+                    null,
+                    LogActionType.Error,
+                    LogUserType.System,
+                    $"External registration failed - User creation failed for email: {email}, Provider: {info.LoginProvider}, Errors: {string.Join(", ", createResult.Errors.Select(e => e.Description))}");
+                
                 return Results.Redirect("/login?error=createuserfailed");
+            }
 
             if (string.IsNullOrWhiteSpace(user.DepositAddress))
             {
@@ -181,9 +265,27 @@ public static class AuthEndpoints
 
             var addLoginResult = await userManager.AddLoginAsync(user, info);
             if (!addLoginResult.Succeeded)
+            {
+                // ✅ Logging für fehlgeschlagenen Login-Add
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.Error,
+                    LogUserType.User,
+                    $"External registration failed - Could not add login for: {user.UserName} (ID: {user.Id}, Provider: {info.LoginProvider})");
+                
                 return Results.Redirect("/login?error=addloginfailed");
+            }
 
             await signInManager.SignInAsync(user, isPersistent: false);
+
+            // ✅ Logging für neue externe Registrierung
+            await LogUserActionAsync(
+                serviceProvider,
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"New user registered via {info.LoginProvider}: {user.UserName} (ID: {user.Id}, Email: {user.Email})");
 
             // ForceLogout Token für neuen User setzen
             var newToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
@@ -200,76 +302,132 @@ public static class AuthEndpoints
             return Results.Redirect(returnUrl);
         });
 
-        // PASSWORD LOGIN MIT BAN-ÜBERPRÜFUNG
+        // PASSWORD LOGIN MIT BAN-ÜBERPRÜFUNG UND LOGGING
         app.MapPost("/auth/password-login", async (
-    HttpContext ctx,
-    SignInManager<ApplicationUser> signInManager,
-    UserManager<ApplicationUser> userManager) =>
-{
-    var form = ctx.Request.Form;
-
-    var userNameOrEmail = form["u"].ToString();
-    var password        = form["p"].ToString();
-    var rememberMe      = bool.TryParse(form["rememberMe"].ToString(), out var r) && r;
-
-    if (string.IsNullOrWhiteSpace(userNameOrEmail) || string.IsNullOrWhiteSpace(password))
-        return Results.Redirect("/login?e=1");
-
-    ApplicationUser? user = await userManager.FindByNameAsync(userNameOrEmail)
-                            ?? await userManager.FindByEmailAsync(userNameOrEmail);
-
-    if (user == null)
-        return Results.Redirect("/login?e=1");
-
-    // Ban-Überprüfung
-    var isLocked = await userManager.IsLockedOutAsync(user);
-    if (isLocked)
-    {
-        var lockoutEnd = await userManager.GetLockoutEndDateAsync(user);
-        if (lockoutEnd > DateTimeOffset.UtcNow)
+            HttpContext ctx,
+            SignInManager<ApplicationUser> signInManager,
+            UserManager<ApplicationUser> userManager,
+            IServiceProvider serviceProvider) =>
         {
-            return Results.Redirect("/login?e=banned");
-        }
-    }
+            var form = ctx.Request.Form;
 
-    var result = await signInManager.PasswordSignInAsync(
-        user, password, rememberMe, lockoutOnFailure: false);
+            var userNameOrEmail = form["u"].ToString();
+            var password        = form["p"].ToString();
+            var rememberMe      = bool.TryParse(form["rememberMe"].ToString(), out var r) && r;
 
-    if (!result.Succeeded)
-        return Results.Redirect("/login?e=1");
+            if (string.IsNullOrWhiteSpace(userNameOrEmail) || string.IsNullOrWhiteSpace(password))
+            {
+                // ✅ Logging für leere Login-Daten
+                await LogUserActionAsync(
+                    serviceProvider,
+                    null,
+                    LogActionType.Warning,
+                    LogUserType.System,
+                    $"Login attempt with empty credentials");
+                
+                return Results.Redirect("/login?e=1");
+            }
 
-    // IMMER neuen Token generieren beim Login
-    var serverToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
-    await userManager.SetAuthenticationTokenAsync(
-        user, "ForceLogout", "Token", serverToken);
-    
-    // Security Stamp aktualisieren
-    await userManager.UpdateSecurityStampAsync(user);
+            ApplicationUser? user = await userManager.FindByNameAsync(userNameOrEmail)
+                                    ?? await userManager.FindByEmailAsync(userNameOrEmail);
 
-    // Cookie mit gleichen Einstellungen wie Identity setzen
-    var cookieOptions = new CookieOptions
-    {
-        HttpOnly = false, // Muss false sein für JavaScript-Zugriff
-        Secure = ctx.Request.IsHttps,
-        SameSite = SameSiteMode.Lax, // Auf Lax setzen für bessere Kompatibilität
-        Expires = rememberMe ? DateTimeOffset.UtcNow.AddDays(30) : null
-    };
-    
-    ctx.Response.Cookies.Append("ForceLogoutToken", serverToken, cookieOptions);
-    
-    Console.WriteLine($"DEBUG - Login successful, token set: {serverToken}");
+            if (user == null)
+            {
+                // ✅ Logging für nicht existierenden User
+                await LogUserActionAsync(
+                    serviceProvider,
+                    null,
+                    LogActionType.Warning,
+                    LogUserType.System,
+                    $"Login attempt for non-existing user: {userNameOrEmail}");
+                
+                return Results.Redirect("/login?e=1");
+            }
 
-    return Results.Redirect("/");
-});
+            // Ban-Überprüfung
+            var isLocked = await userManager.IsLockedOutAsync(user);
+            if (isLocked)
+            {
+                var lockoutEnd = await userManager.GetLockoutEndDateAsync(user);
+                if (lockoutEnd > DateTimeOffset.UtcNow)
+                {
+                    // ✅ Logging für gescheiterten Login wegen Ban
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        user.Id,
+                        LogActionType.Warning,
+                        LogUserType.User,
+                        $"Login attempt blocked - account banned: {user.UserName} (ID: {user.Id})");
+                    
+                    return Results.Redirect("/login?e=banned");
+                }
+            }
 
-        // LOGOUT
+            var result = await signInManager.PasswordSignInAsync(
+                user, password, rememberMe, lockoutOnFailure: false);
+
+            if (!result.Succeeded)
+            {
+                // ✅ Logging für gescheiterten Login
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.Warning,
+                    LogUserType.User,
+                    $"Failed password login attempt: {user.UserName} (ID: {user.Id})");
+                
+                return Results.Redirect("/login?e=1");
+            }
+
+            // ✅ Logging für erfolgreichen Login
+            await LogUserActionAsync(
+                serviceProvider,
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"Password login successful: {user.UserName} (ID: {user.Id}, RememberMe: {rememberMe})");
+
+            // IMMER neuen Token generieren beim Login
+            var serverToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
+            await userManager.SetAuthenticationTokenAsync(
+                user, "ForceLogout", "Token", serverToken);
+            
+            // Security Stamp aktualisieren
+            await userManager.UpdateSecurityStampAsync(user);
+
+            // Cookie mit gleichen Einstellungen wie Identity setzen
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = false,
+                Secure = ctx.Request.IsHttps,
+                SameSite = SameSiteMode.Lax,
+                Expires = rememberMe ? DateTimeOffset.UtcNow.AddDays(30) : null
+            };
+            
+            ctx.Response.Cookies.Append("ForceLogoutToken", serverToken, cookieOptions);
+            
+            Console.WriteLine($"DEBUG - Login successful, token set: {serverToken}");
+
+            return Results.Redirect("/");
+        });
+
+        // LOGOUT MIT LOGGING
         app.MapGet("/logout", async (
             HttpContext ctx,
             SignInManager<ApplicationUser> signInManager,
-            UserManager<ApplicationUser> userManager) =>
+            UserManager<ApplicationUser> userManager,
+            IServiceProvider serviceProvider) =>
         {
             var user = await userManager.GetUserAsync(ctx.User);
             
+            // ✅ Logging für Logout-Start
+            await LogUserActionAsync(
+                serviceProvider,
+                user?.Id,
+                LogActionType.UserAction,
+                user != null ? LogUserType.User : LogUserType.System,
+                $"Logout initiated {(user != null ? $"for user: {user.UserName} (ID: {user.Id})" : "for anonymous user")}");
+
             // Normales Logout
             await signInManager.SignOutAsync();
             
@@ -281,22 +439,41 @@ public static class AuthEndpoints
             if (user != null)
             {
                 await userManager.RemoveAuthenticationTokenAsync(user, "ForceLogout", "Token");
+                
+                // ✅ Logging für erfolgreichen Logout
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.UserAction,
+                    LogUserType.User,
+                    $"User logged out successfully: {user.UserName} (ID: {user.Id})");
             }
 
             return Results.Redirect("/");
         });
 
-        // EMAIL CHANGE CONFIRMATION
+        // EMAIL CHANGE CONFIRMATION MIT LOGGING
         app.MapGet("/confirm-email-change", async (
             int userId,
             string email,
             string token,
             UserManager<ApplicationUser> userManager,
-            SignInManager<ApplicationUser> signInManager) =>
+            SignInManager<ApplicationUser> signInManager,
+            IServiceProvider serviceProvider) =>
         {
             var user = await userManager.FindByIdAsync(userId.ToString());
             if (user == null)
+            {
+                // ✅ Logging für ungültigen User bei Email-Change
+                await LogUserActionAsync(
+                    serviceProvider,
+                    null,
+                    LogActionType.Error,
+                    LogUserType.System,
+                    $"Email change confirmation failed - User not found: ID: {userId}");
+                
                 return Results.BadRequest("Invalid user.");
+            }
 
             try
             {
@@ -306,17 +483,44 @@ public static class AuthEndpoints
                 var tokenBytes = WebEncoders.Base64UrlDecode(token);
                 var normalToken = Encoding.UTF8.GetString(tokenBytes);
 
+                var oldEmail = user.Email;
                 var result = await userManager.ChangeEmailAsync(user, newEmail, normalToken);
                 if (!result.Succeeded)
+                {
+                    // ✅ Logging für fehlgeschlagene Email-Änderung
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        user.Id,
+                        LogActionType.Error,
+                        LogUserType.User,
+                        $"Email change failed: {user.UserName} (ID: {user.Id}) from {oldEmail} to {newEmail} - Errors: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                    
                     return Results.BadRequest("Email change failed.");
+                }
+
+                // ✅ Logging für erfolgreiche Email-Änderung
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.UserAction,
+                    LogUserType.User,
+                    $"Email changed successfully from {oldEmail} to {newEmail}: {user.UserName} (ID: {user.Id})");
 
                 // optional: neu einloggen, damit Claims/Cookie sauber sind
                 await signInManager.RefreshSignInAsync(user);
 
                 return Results.Redirect("/settings?msg=email-updated");
             }
-            catch
+            catch (Exception ex)
             {
+                // ✅ Logging für Exception bei Email-Change
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.Error,
+                    LogUserType.User,
+                    $"Email change confirmation exception: {user.UserName} (ID: {user.Id}) - {ex.Message}");
+                
                 return Results.BadRequest("Invalid link.");
             }
         });
@@ -363,10 +567,11 @@ public static class AuthEndpoints
             return Results.Content(html, "text/html");
         });
 
-        // RESET PASSWORD - SUBMIT (POST) MIT BAN-ÜBERPRÜFUNG
+        // RESET PASSWORD - SUBMIT (POST) MIT BAN-ÜBERPRÜFUNG UND LOGGING
         app.MapPost("/reset-password", async (
             HttpContext ctx,
-            UserManager<ApplicationUser> userManager) =>
+            UserManager<ApplicationUser> userManager,
+            IServiceProvider serviceProvider) =>
         {
             var form = await ctx.Request.ReadFormAsync();
 
@@ -376,20 +581,70 @@ public static class AuthEndpoints
             var p2        = form["p2"].ToString();
 
             if (!int.TryParse(userIdRaw, out var userId))
+            {
+                // ✅ Logging für ungültige User-ID
+                await LogUserActionAsync(
+                    serviceProvider,
+                    null,
+                    LogActionType.Error,
+                    LogUserType.System,
+                    $"Password reset failed - Invalid user ID: {userIdRaw}");
+                
                 return Results.BadRequest("Invalid request.");
+            }
 
             if (string.IsNullOrWhiteSpace(tokenEnc))
+            {
+                // ✅ Logging für fehlendes Token
+                await LogUserActionAsync(
+                    serviceProvider,
+                    userId,
+                    LogActionType.Error,
+                    LogUserType.User,
+                    $"Password reset failed - Missing token for user ID: {userId}");
+                
                 return Results.BadRequest("Invalid request.");
+            }
 
             if (string.IsNullOrWhiteSpace(p1) || p1.Length < 7)
+            {
+                // ✅ Logging für zu kurzes Passwort
+                await LogUserActionAsync(
+                    serviceProvider,
+                    userId,
+                    LogActionType.Warning,
+                    LogUserType.User,
+                    $"Password reset attempt with too short password for user ID: {userId}");
+                
                 return Results.BadRequest("Password too short.");
+            }
 
             if (p1 != p2)
+            {
+                // ✅ Logging für nicht übereinstimmende Passwörter
+                await LogUserActionAsync(
+                    serviceProvider,
+                    userId,
+                    LogActionType.Warning,
+                    LogUserType.User,
+                    $"Password reset attempt with mismatched passwords for user ID: {userId}");
+                
                 return Results.BadRequest("Passwords do not match.");
+            }
 
             var user = await userManager.FindByIdAsync(userId.ToString());
             if (user == null)
+            {
+                // ✅ Logging für nicht existierenden User
+                await LogUserActionAsync(
+                    serviceProvider,
+                    userId,
+                    LogActionType.Error,
+                    LogUserType.System,
+                    $"Password reset failed - User not found: ID: {userId}");
+                
                 return Results.BadRequest("Invalid user.");
+            }
 
             // Ban-Überprüfung
             var isLocked = await userManager.IsLockedOutAsync(user);
@@ -398,6 +653,14 @@ public static class AuthEndpoints
                 var lockoutEnd = await userManager.GetLockoutEndDateAsync(user);
                 if (lockoutEnd > DateTimeOffset.UtcNow)
                 {
+                    // ✅ Logging für gescheiterten Passwort-Reset wegen Ban
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        user.Id,
+                        LogActionType.Warning,
+                        LogUserType.User,
+                        $"Password reset blocked - account banned: {user.UserName} (ID: {user.Id})");
+                    
                     return Results.Redirect("/login?e=banned");
                 }
             }
@@ -409,12 +672,38 @@ public static class AuthEndpoints
 
                 var result = await userManager.ResetPasswordAsync(user, normalToken, p1);
                 if (!result.Succeeded)
+                {
+                    // ✅ Logging für fehlgeschlagenen Passwort-Reset
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        user.Id,
+                        LogActionType.Error,
+                        LogUserType.User,
+                        $"Password reset failed: {user.UserName} (ID: {user.Id}) - Errors: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                    
                     return Results.BadRequest("Reset failed.");
+                }
+
+                // ✅ Logging für erfolgreichen Passwort-Reset
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.UserAction,
+                    LogUserType.User,
+                    $"Password reset successful: {user.UserName} (ID: {user.Id})");
 
                 return Results.Redirect("/login?msg=pw-reset");
             }
-            catch
+            catch (Exception ex)
             {
+                // ✅ Logging für Exception bei Passwort-Reset
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.Error,
+                    LogUserType.User,
+                    $"Password reset exception: {user.UserName} (ID: {user.Id}) - {ex.Message}");
+                
                 return Results.BadRequest("Invalid link.");
             }
         });
@@ -434,87 +723,121 @@ public static class AuthEndpoints
         });
 
         // CHECK IF USER NEEDS TO LOGOUT (FOR POLLING)
-        // KORRIGIERT in AuthEndpoints.cs - Check-Logout Endpoint:
-    app.MapGet("/auth/check-logout", async (
-    HttpContext ctx,
-    UserManager<ApplicationUser> userManager,
-    SignInManager<ApplicationUser> signInManager) =>
-{
-    try
-    {
-        var user = await userManager.GetUserAsync(ctx.User);
-        if (user == null) 
+        app.MapGet("/auth/check-logout", async (
+            HttpContext ctx,
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            IServiceProvider serviceProvider) =>
         {
-            ctx.Response.Cookies.Delete("ForceLogoutToken");
-            return Results.Ok(new { needsLogout = false });
-        }
-
-        // EIGENEN Scope für frischen DB Context
-        using var scope = ctx.RequestServices.CreateScope();
-        var freshUserManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        
-        // User frisch aus DB laden
-        var freshUser = await freshUserManager.FindByIdAsync(user.Id.ToString());
-        if (freshUser == null)
-        {
-            await signInManager.SignOutAsync();
-            ctx.Response.Cookies.Delete("ForceLogoutToken");
-            return Results.Ok(new { 
-                needsLogout = true,
-                message = "Account not found"
-            });
-        }
-
-        // Ban-Status prüfen
-        var isLocked = await freshUserManager.IsLockedOutAsync(freshUser);
-        if (isLocked)
-        {
-            var lockoutEnd = await freshUserManager.GetLockoutEndDateAsync(freshUser);
-            if (lockoutEnd > DateTimeOffset.UtcNow)
+            try
             {
-                await signInManager.SignOutAsync();
-                ctx.Response.Cookies.Delete("ForceLogoutToken");
-                return Results.Ok(new { 
-                    needsLogout = true,
-                    message = "Your account has been suspended"
-                });
+                var user = await userManager.GetUserAsync(ctx.User);
+                if (user == null) 
+                {
+                    ctx.Response.Cookies.Delete("ForceLogoutToken");
+                    return Results.Ok(new { needsLogout = false });
+                }
+
+                // EIGENEN Scope für frischen DB Context
+                using var scope = ctx.RequestServices.CreateScope();
+                var freshUserManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                
+                // User frisch aus DB laden
+                var freshUser = await freshUserManager.FindByIdAsync(user.Id.ToString());
+                if (freshUser == null)
+                {
+                    await signInManager.SignOutAsync();
+                    ctx.Response.Cookies.Delete("ForceLogoutToken");
+                    
+                    // ✅ Logging für automatischen Logout (Account nicht gefunden)
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        user.Id,
+                        LogActionType.Warning,
+                        LogUserType.User,
+                        $"Auto-logout triggered - Account not found: ID: {user.Id}");
+                    
+                    return Results.Ok(new { 
+                        needsLogout = true,
+                        message = "Account not found"
+                    });
+                }
+
+                // Ban-Status prüfen
+                var isLocked = await freshUserManager.IsLockedOutAsync(freshUser);
+                if (isLocked)
+                {
+                    var lockoutEnd = await freshUserManager.GetLockoutEndDateAsync(freshUser);
+                    if (lockoutEnd > DateTimeOffset.UtcNow)
+                    {
+                        await signInManager.SignOutAsync();
+                        ctx.Response.Cookies.Delete("ForceLogoutToken");
+                        
+                        // ✅ Logging für automatischen Logout (Ban)
+                        await LogUserActionAsync(
+                            serviceProvider,
+                            freshUser.Id,
+                            LogActionType.Warning,
+                            LogUserType.User,
+                            $"Auto-logout triggered - Account banned: {freshUser.UserName} (ID: {freshUser.Id})");
+                        
+                        return Results.Ok(new { 
+                            needsLogout = true,
+                            message = "Your account has been suspended"
+                        });
+                    }
+                }
+
+                // ForceLogout Token prüfen
+                var serverToken = await freshUserManager.GetAuthenticationTokenAsync(
+                    freshUser, "ForceLogout", "Token");
+                
+                var clientToken = ctx.Request.Cookies["ForceLogoutToken"];
+                
+                // Wenn kein Server-Token, ist alles OK
+                if (string.IsNullOrEmpty(serverToken))
+                {
+                    ctx.Response.Cookies.Delete("ForceLogoutToken");
+                    return Results.Ok(new { needsLogout = false });
+                }
+
+                // Wenn Client-Token fehlt oder anders ist -> logout
+                if (string.IsNullOrEmpty(clientToken) || clientToken != serverToken)
+                {
+                    await signInManager.SignOutAsync();
+                    ctx.Response.Cookies.Delete(".AspNetCore.Identity.Application");
+                    ctx.Response.Cookies.Delete("ForceLogoutToken");
+                    
+                    // ✅ Logging für erzwungenen Logout (Token mismatch)
+                    await LogUserActionAsync(
+                        serviceProvider,
+                        freshUser.Id,
+                        LogActionType.AdminAction,
+                        LogUserType.User,
+                        $"Force logout triggered - Token mismatch: {freshUser.UserName} (ID: {freshUser.Id}) - ServerToken: {serverToken?.Substring(0, Math.Min(20, serverToken.Length))}..., ClientToken: {clientToken?.Substring(0, Math.Min(20, clientToken.Length))}...");
+                    
+                    return Results.Ok(new { 
+                        needsLogout = true,
+                        message = "Your session has been terminated by an administrator."
+                    });
+                }
+
+                return Results.Ok(new { needsLogout = false });
             }
-        }
-
-        // ForceLogout Token prüfen
-        var serverToken = await freshUserManager.GetAuthenticationTokenAsync(
-            freshUser, "ForceLogout", "Token");
-        
-        var clientToken = ctx.Request.Cookies["ForceLogoutToken"];
-        
-        // Wenn kein Server-Token, ist alles OK
-        if (string.IsNullOrEmpty(serverToken))
-        {
-            ctx.Response.Cookies.Delete("ForceLogoutToken");
-            return Results.Ok(new { needsLogout = false });
-        }
-
-        // Wenn Client-Token fehlt oder anders ist -> logout
-        if (string.IsNullOrEmpty(clientToken) || clientToken != serverToken)
-        {
-            await signInManager.SignOutAsync();
-            ctx.Response.Cookies.Delete(".AspNetCore.Identity.Application");
-            ctx.Response.Cookies.Delete("ForceLogoutToken");
-            
-            return Results.Ok(new { 
-                needsLogout = true,
-                message = "Your session has been terminated by an administrator."
-            });
-        }
-
-        return Results.Ok(new { needsLogout = false });
-    }
-    catch (Exception ex)
-    {
-        // Bei Fehler kein Logout erzwingen
-        return Results.Ok(new { needsLogout = false });
-    }
-});
+            catch (Exception ex)
+            {
+                // ✅ Logging für Exception bei Check-Logout
+                await LogUserActionAsync(
+                    serviceProvider,
+                    null,
+                    LogActionType.Error,
+                    LogUserType.System,
+                    $"Check-logout exception: {ex.Message}");
+                
+                // Bei Fehler kein Logout erzwingen
+                return Results.Ok(new { needsLogout = false });
+            }
+        });
 
         // SET CLIENT TOKEN COOKIE (CALL AFTER LOGIN)
         app.MapGet("/auth/set-client-token", async (
@@ -542,14 +865,23 @@ public static class AuthEndpoints
             return Results.Ok(new { success = true });
         });
 
-        // FORCE LOGOUT ENDPOINT (FOR JAVASCRIPT)
+        // FORCE LOGOUT ENDPOINT (FOR JAVASCRIPT) MIT LOGGING
         app.MapPost("/auth/force-logout", async (
             HttpContext ctx,
             SignInManager<ApplicationUser> signInManager,
-            UserManager<ApplicationUser> userManager) =>
+            UserManager<ApplicationUser> userManager,
+            IServiceProvider serviceProvider) =>
         {
             var user = await userManager.GetUserAsync(ctx.User);
             
+            // ✅ Logging für Force-Logout Start
+            await LogUserActionAsync(
+                serviceProvider,
+                user?.Id,
+                LogActionType.UserAction,
+                user != null ? LogUserType.User : LogUserType.System,
+                $"JavaScript force logout initiated {(user != null ? $"for user: {user.UserName} (ID: {user.Id})" : "for anonymous user")}");
+
             // 1. Sign out
             await signInManager.SignOutAsync();
             
@@ -562,6 +894,14 @@ public static class AuthEndpoints
             {
                 await userManager.RemoveAuthenticationTokenAsync(user, "ForceLogout", "Token");
                 await userManager.UpdateSecurityStampAsync(user);
+                
+                // ✅ Logging für erfolgreichen JavaScript-forced Logout
+                await LogUserActionAsync(
+                    serviceProvider,
+                    user.Id,
+                    LogActionType.UserAction,
+                    LogUserType.User,
+                    $"JavaScript forced logout successful: {user.UserName} (ID: {user.Id})");
             }
 
             return Results.Ok(new { 
@@ -641,5 +981,35 @@ public static class AuthEndpoints
         }
 
         return final;
+    }
+
+    // Hilfsmethode für Logging in den Endpoints
+    private static async Task LogUserActionAsync(
+        IServiceProvider serviceProvider,
+        int? userId,
+        LogActionType actionType,
+        LogUserType userType,
+        string description)
+    {
+        try
+        {
+            using var scope = serviceProvider.CreateScope();
+            var logRepository = scope.ServiceProvider.GetRequiredService<IRepository<Log>>();
+            
+            var logEntry = new Log
+            {
+                UserId = userId,
+                ActionType = actionType,
+                UserType = userType,
+                Description = description,
+                Date = DateTime.UtcNow
+            };
+
+            await logRepository.AddAsync(logEntry);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Logging failed in endpoint: {ex.Message}");
+        }
     }
 }

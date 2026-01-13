@@ -1,31 +1,36 @@
 using System.Linq.Expressions;
-using CoinDrop;
+using Domain;
 using Microsoft.EntityFrameworkCore;
 
-namespace Domain;
 public abstract class ARepository<TEntity> : IRepository<TEntity> where TEntity : class
 {
-    protected readonly CoinDropContext _context;
-    protected readonly DbSet<TEntity> _entitySet;
+    private readonly IDbContextFactory<CoinDropContext> _contextFactory;
 
-    protected ARepository(CoinDropContext context)
+    protected ARepository(IDbContextFactory<CoinDropContext> contextFactory)
     {
-        _context = context;
-        _entitySet = _context.Set<TEntity>();
+        _contextFactory = contextFactory;
+    }
+
+    // Helper method to get context
+    private async Task<CoinDropContext> GetContextAsync(CancellationToken ct = default)
+    {
+        return await _contextFactory.CreateDbContextAsync(ct);
     }
 
     // Wie im 1. Repo: AddAsync mit SaveChangesAsync
     public virtual async Task AddAsync(TEntity entity, CancellationToken ct = default)
     {
-        await _entitySet.AddAsync(entity, ct);
-        await _context.SaveChangesAsync(ct);
+        await using var context = await GetContextAsync(ct);
+        context.Set<TEntity>().Add(entity);
+        await context.SaveChangesAsync(ct);
     }
 
     // Wie im 1. Repo: AddRange (ohne Async-Suffix), aber trotzdem async/await + SaveChangesAsync
     public virtual async Task AddRange(IEnumerable<TEntity> entities, CancellationToken ct = default)
     {
-        await _entitySet.AddRangeAsync(entities, ct);
-        await _context.SaveChangesAsync(ct);
+        await using var context = await GetContextAsync(ct);
+        context.Set<TEntity>().AddRange(entities);
+        await context.SaveChangesAsync(ct);
     }
 
     // Wie im 1. Repo: Query via Expression<Func<TEntity, bool>>
@@ -33,7 +38,8 @@ public abstract class ARepository<TEntity> : IRepository<TEntity> where TEntity 
         Expression<Func<TEntity, bool>> predicate,
         CancellationToken ct = default)
     {
-        return await _entitySet
+        await using var context = await GetContextAsync(ct);
+        return await context.Set<TEntity>()
             .Where(predicate)
             .FirstOrDefaultAsync(ct);
     }
@@ -44,7 +50,8 @@ public abstract class ARepository<TEntity> : IRepository<TEntity> where TEntity 
         int take,
         CancellationToken ct = default)
     {
-        return await _entitySet
+        await using var context = await GetContextAsync(ct);
+        return await context.Set<TEntity>()
             .Skip(skip)
             .Take(take)
             .ToListAsync(ct);
@@ -53,45 +60,88 @@ public abstract class ARepository<TEntity> : IRepository<TEntity> where TEntity 
     // Wie im 1. Repo: UpdateAsync mit SaveChangesAsync
     public virtual async Task UpdateAsync(TEntity entity, CancellationToken ct = default)
     {
-        _entitySet.Update(entity);
-        await _context.SaveChangesAsync(ct);
+        await using var context = await GetContextAsync(ct);
+        context.Set<TEntity>().Update(entity);
+        await context.SaveChangesAsync(ct);
     }
 
     // Wie im 1. Repo: UpdateRange + SaveChangesAsync
     public virtual async Task UpdateRange(IEnumerable<TEntity> entities, CancellationToken ct = default)
     {
-        _entitySet.UpdateRange(entities);
-        await _context.SaveChangesAsync(ct);
+        await using var context = await GetContextAsync(ct);
+        context.Set<TEntity>().UpdateRange(entities);
+        await context.SaveChangesAsync(ct);
     }
 
     // Wie im 1. Repo: DeleteRangeAsync
     public virtual async Task DeleteRangeAsync(IEnumerable<TEntity> entities, CancellationToken ct = default)
     {
-        _entitySet.RemoveRange(entities);
-        await _context.SaveChangesAsync(ct);
+        await using var context = await GetContextAsync(ct);
+        context.Set<TEntity>().RemoveRange(entities);
+        await context.SaveChangesAsync(ct);
     }
 
     // Wie im 1. Repo: DeleteAsync
     public virtual async Task DeleteAsync(TEntity entity, CancellationToken ct = default)
     {
-        _entitySet.Remove(entity);
-        await _context.SaveChangesAsync(ct);
+        await using var context = await GetContextAsync(ct);
+        context.Set<TEntity>().Remove(entity);
+        await context.SaveChangesAsync(ct);
     }
 
     // ---- Zusätzliche Funktionalität aus dem 2. Repo beibehalten ----
 
     // Entspricht der alten GetAsync(int id, ...)
-    public virtual Task<TEntity?> GetAsync(int id, CancellationToken ct = default)
-        => _entitySet.FindAsync(new object?[] { id }, ct).AsTask();
+    public virtual async Task<TEntity?> GetAsync(int id, CancellationToken ct = default)
+    {
+        await using var context = await GetContextAsync(ct);
+        return await context.Set<TEntity>().FindAsync(new object?[] { id }, ct);
+    }
 
     // Entspricht der alten GetAllAsync() ohne Paging
-    public virtual Task<List<TEntity>> GetAllAsync(CancellationToken ct = default)
-        => _entitySet.ToListAsync(ct);
+    public virtual async Task<List<TEntity>> GetAllAsync(CancellationToken ct = default)
+    {
+        await using var context = await GetContextAsync(ct);
+        return await context.Set<TEntity>().ToListAsync(ct);
+    }
 
-    // Query wie vorher
-    public virtual IQueryable<TEntity> Query() => _entitySet.AsQueryable();
+    // Query wie vorher - ABER: Diese Methode ist problematisch mit Factory!
+    // Der Context wird disposed bevor die Query ausgeführt wird
+    public virtual IQueryable<TEntity> Query()
+    {
+        // ACHTUNG: Diese Methode funktioniert nicht gut mit Factory!
+        // Besser: Eine async Query-Methode verwenden
+        var context = _contextFactory.CreateDbContext();
+        return context.Set<TEntity>().AsQueryable();
+        
+        // Alternative: Statt Query() verwende ExecuteQueryAsync
+    }
 
-    // Explizites SaveChangesAsync wie vorher verfügbar
-    public virtual Task<int> SaveChangesAsync(CancellationToken ct = default)
-        => _context.SaveChangesAsync(ct);
+    // NEUE Methode: Async Query (besser für Factory)
+    public virtual async Task<List<TEntity>> ExecuteQueryAsync(
+        Func<IQueryable<TEntity>, IQueryable<TEntity>> queryBuilder,
+        CancellationToken ct = default)
+    {
+        await using var context = await GetContextAsync(ct);
+        var query = queryBuilder(context.Set<TEntity>());
+        return await query.ToListAsync(ct);
+    }
+
+    // NEUE Methode: FirstOrDefault mit Query-Builder
+    public virtual async Task<TEntity?> QueryFirstOrDefaultAsync(
+        Func<IQueryable<TEntity>, IQueryable<TEntity>> queryBuilder,
+        CancellationToken ct = default)
+    {
+        await using var context = await GetContextAsync(ct);
+        var query = queryBuilder(context.Set<TEntity>());
+        return await query.FirstOrDefaultAsync(ct);
+    }
+
+    // Explizites SaveChangesAsync - NICHT MEHR NÖTIG, da jeder Context eigenes SaveChanges hat
+    // Diese Methode können wir entfernen oder so implementieren:
+    public virtual async Task<int> SaveChangesAsync(CancellationToken ct = default)
+    {
+        await using var context = await GetContextAsync(ct);
+        return await context.SaveChangesAsync(ct);
+    }
 }

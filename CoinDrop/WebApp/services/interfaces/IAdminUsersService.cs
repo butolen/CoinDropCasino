@@ -19,3 +19,4 @@ public interface IAdminUserService
     
     Task<Dictionary<int, (bool IsAdmin, bool IsBanned, string LastAction)>> GetUserStatusBatchAsync(List<int> userIds);
 }
+

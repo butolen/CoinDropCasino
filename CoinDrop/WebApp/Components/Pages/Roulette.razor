@@ -1,4 +1,655 @@
 ﻿@page "/roulette"
+@using CoinDrop
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IRouletteService RouletteService
+@inject NavigationManager Navigation
+@inject ILogger<Roulette> Logger
+@rendermode InteractiveServer
 
-<div>Roulette</div>
+<PageTitle>Roulette Casino</PageTitle>
 
+<!-- Spin Animation Overlay -->
+@if (showSpinAnimation)
+{
+    <div class="roulette-spin-overlay">
+        <div class="spin-container">
+            <div class="roulette-wheel" id="rouletteWheel">
+                @for (int i = 0; i <= 36; i++)
+                {
+                    var angle = i * 9.73;
+                    var style = $"transform: rotate({angle}deg) translate(180px) rotate(-{angle}deg);";
+                    
+                    <div class="wheel-number" style="@style">
+                        @i
+                    </div>
+                }
+            </div>
+            <div class="roulette-ball" id="rouletteBall"></div>
+            <div class="result-pointer"></div>
+        </div>
+        
+        <div class="spin-countdown" id="spinCountdown">
+            @countdownText
+        </div>
+        
+        <div class="spin-message">
+            @(isCalculating ? "Calculating results..." : "The wheel is spinning...")
+        </div>
+    </div>
+}
+
+<div class="roulette-page" style="@(showSpinAnimation ? "filter: blur(2px); pointer-events: none;" : "")">
+    <div class="roulette-container">
+        
+        <!-- Header Row -->
+        <div class="header-row">
+            <div class="balance-display">
+                <div class="balance-label">BALANCE</div>
+                <div class="balance-amount">€ @userBalance.ToString("N2")</div>
+            </div>
+            
+            <div class="last-numbers-display">
+                <div class="last-numbers-label">LAST NUMBERS</div>
+                <div class="numbers-row">
+                    @if (lastNumbers.Any())
+                    {
+                        @foreach (var num in lastNumbers)
+                        {
+                            <div class="number-badge @(GetNumberColor(num)?.ToLower())">
+                                @num
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="no-numbers">- - - - -</div>
+                    }
+                </div>
+            </div>
+            
+            <div class="limits-display">
+                <div class="limits-label">LIMITS</div>
+                <div class="limits-values">€@minBet - €@maxBet</div>
+                <div class="status-badge @(isActive ? "active" : "inactive")">
+                    @(isActive ? "LIVE" : "OFF")
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="error-message">
+                <span>@errorMessage</span>
+                <button class="close-error" @onclick="CloseErrorMessage">×</button>
+            </div>
+        }
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Left Column: Bets & Controls -->
+            <div class="left-column">
+                <!-- Current Bets -->
+                <div class="bets-panel">
+                    <div class="panel-header">
+                        <span>YOUR BETS</span>
+                        <span class="bets-count">(@currentBets.Count)</span>
+                    </div>
+                    
+                    <div class="bets-list">
+                        @if (currentBets.Any())
+                        {
+                            @foreach (var bet in currentBets)
+                            {
+                                <div class="bet-item">
+                                    <div class="bet-info">
+                                        <div class="bet-type-small">@GetBetTypeDisplay(bet.Type)</div>
+                                        @if (bet.Number.HasValue)
+                                        {
+                                            <div class="bet-number-small">#@bet.Number</div>
+                                        }
+                                    </div>
+                                    <div class="bet-amount-small">
+                                        €@bet.Amount.ToString("N2")
+                                        <button class="remove-btn" @onclick="() => RemoveBet(bet)" title="Remove">×</button>
+                                    </div>
+                                </div>
+                            }
+                            <div class="bets-total">
+                                <div>Total Bet:</div>
+                                <div class="total-amount">€@currentBets.Sum(b => b.Amount).ToString("N2")</div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="no-bets-message">
+                                No bets placed
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- Chip Selection -->
+                <div class="chips-panel">
+                    <div class="panel-header">CHIPS</div>
+                    <div class="chips-grid">
+                        @foreach (var chip in chips)
+                        {
+                            <button class="chip @(selectedChip == chip.Value ? "selected" : "")"
+                                    @onclick="() => SelectChip(chip.Value)">
+                                €@chip.Text
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <!-- Control Buttons -->
+                <div class="controls-panel">
+                    <button class="btn-clear" @onclick="ClearAllBets" 
+                            disabled="@(!currentBets.Any())">
+                        <span class="btn-icon">✕</span>
+                        CLEAR ALL
+                    </button>
+                    
+                    @if (isActive)
+                    {
+                        <button class="btn-spin" @onclick="StartSpinAnimation" 
+                                disabled="@(!CanSpin() || showSpinAnimation)">
+                            <span class="btn-icon">🎰</span>
+                            SPIN
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="btn-spin disabled" disabled>
+                            <span class="btn-icon">⛔</span>
+                            OFFLINE
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="right-column">
+                <!-- Zero oben links -->
+                <div class="zero-section">
+                    <button class="zero-cell @IsBetActive(IRouletteService.BetType.StraightUp, 0)"
+                            @onclick="() => AddStraightUpBet(0)">
+                        0
+                    </button>
+                </div>
+                <!-- Roulette Table -->
+                <div class="roulette-table">
+
+
+                    <!-- "2 to 1" Spalten (links neben der Tabelle) -->
+                    <div class="columns-section">
+                        @foreach (var betType in betTypes.Where(b => b.Key == IRouletteService.BetType.Column1 ||
+                                                                     b.Key == IRouletteService.BetType.Column2 ||
+                                                                     b.Key == IRouletteService.BetType.Column3))
+                        {
+                            <button class="column-cell @IsBetTypeActive(betType.Key)"
+                                    @onclick="() => AddOutsideBet(betType.Key)">
+                                <div>2 to 1</div>
+                                <div class="odds">2x</div>
+                            </button>
+                        }
+                    </div>
+
+                    <!-- Hauptnummerngrid (mittig) -->
+                    <div class="main-table-section">
+                        <div class="numbers-grid">
+                            @for (int row = 0; row < 3; row++)
+                            {
+                                @for (int col = 0; col < 12; col++)
+                                {
+                                    var currentNumber = (col * 3) + row + 1;
+                                    var isRed = redNumbers.Contains(currentNumber);
+                                    <button @key="currentNumber"
+                                            class="num-cell @(isRed ? "red" : "black") @IsBetActive(IRouletteService.BetType.StraightUp, currentNumber)"
+                                            @onclick="() => AddStraightUpBet(currentNumber)">
+                                        @currentNumber
+                                    </button>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Rechte Außenwetten -->
+                    <div class="right-table-section">
+                        <button class="outside-cell red @IsBetTypeActive(IRouletteService.BetType.Red)"
+                                @onclick="() => AddOutsideBet(IRouletteService.BetType.Red)">
+                            <div>RED</div>
+                            <div class="odds">1x</div>
+                        </button>
+
+                        <button class="outside-cell black @IsBetTypeActive(IRouletteService.BetType.Black)"
+                                @onclick="() => AddOutsideBet(IRouletteService.BetType.Black)">
+                            <div>BLACK</div>
+                            <div class="odds">1x</div>
+                        </button>
+
+                        <button class="outside-cell @IsBetTypeActive(IRouletteService.BetType.Even)"
+                                @onclick="() => AddOutsideBet(IRouletteService.BetType.Even)">
+                            <div>EVEN</div>
+                            <div class="odds">1x</div>
+                        </button>
+
+                        <button class="outside-cell @IsBetTypeActive(IRouletteService.BetType.Odd)"
+                                @onclick="() => AddOutsideBet(IRouletteService.BetType.Odd)">
+                            <div>ODD</div>
+                            <div class="odds">1x</div>
+                        </button>
+
+                        <button class="outside-cell @IsBetTypeActive(IRouletteService.BetType.Low)"
+                                @onclick="() => AddOutsideBet(IRouletteService.BetType.Low)">
+                            <div>1 to 18</div>
+                            <div class="odds">1x</div>
+                        </button>
+
+                        <button class="outside-cell @IsBetTypeActive(IRouletteService.BetType.High)"
+                                @onclick="() => AddOutsideBet(IRouletteService.BetType.High)">
+                            <div>19 to 36</div>
+                            <div class="odds">1x</div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Dozen-Sektion UNTER der Tabelle (zentriert) -->
+                <div class="dozen-section">
+                    <button class="dozen-cell @IsBetTypeActive(IRouletteService.BetType.Dozen1)"
+                            @onclick="() => AddOutsideBet(IRouletteService.BetType.Dozen1)">
+                        <div>1st 12</div>
+                        <div class="odds">2x</div>
+                    </button>
+
+                    <button class="dozen-cell @IsBetTypeActive(IRouletteService.BetType.Dozen2)"
+                            @onclick="() => AddOutsideBet(IRouletteService.BetType.Dozen2)">
+                        <div>2nd 12</div>
+                        <div class="odds">2x</div>
+                    </button>
+
+                    <button class="dozen-cell @IsBetTypeActive(IRouletteService.BetType.Dozen3)"
+                            @onclick="() => AddOutsideBet(IRouletteService.BetType.Dozen3)">
+                        <div>3rd 12</div>
+                        <div class="odds">2x</div>
+                    </button>
+                </div>
+            </div>
+</div>
+        </div>
+
+        <!-- Recent Games Footer -->
+        <div class="footer">
+            <div class="footer-header">RECENT GAMES</div>
+            <div class="games-list">
+                @if (recentGames.Any())
+                {
+                    @foreach (var game in recentGames)
+                    {
+                        var netResult = game.WinAmount - game.BetAmount;
+                        <div class="game-item @game.Result.ToString().ToLower()">
+                            <div class="game-time">@game.Timestamp.ToString("HH:mm")</div>
+                            <div class="game-bet-amount">€@game.BetAmount.ToString("N2")</div>
+                            <div class="game-result @(netResult > 0 ? "win" : "loss")">
+                                €@netResult.ToString("+0.00;-0.00")
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="no-games-message">
+                        No games played yet
+                    </div>
+                }
+            </div>
+        </div>
+
+    </div>
+
+
+@code {
+    // User Data
+    private ClaimsPrincipal? user;
+    private int userId;
+    private double userBalance;
+    
+    // Game Data
+    private double minBet = 5;
+    private double maxBet = 500;
+    private bool isActive = true;
+    private Dictionary<IRouletteService.BetType, string> betTypes = new();
+    private List<int> redNumbers = new();
+    private List<int> blackNumbers = new();
+    private List<GameSession> recentGames = new();
+    private List<int> lastNumbers = new(); // Für die letzten 5 Zahlen
+    
+    // Current Bets
+    private List<IRouletteService.RouletteBet> currentBets = new();
+    private double selectedChip = 1;
+    
+    // Result
+    private bool showResult = false;
+    private string resultMessage = string.Empty;
+    private int winningNumber;
+    private string winningColor = string.Empty;
+    private double totalWin;
+    private double totalBet;
+    private double netWin;
+    private double newBalance;
+    private List<IRouletteService.RouletteBet> winningBets = new();
+    
+    // Error
+    private string errorMessage = string.Empty;
+    
+    // Spin Animation
+    private bool showSpinAnimation = false;
+    private bool isCalculating = false;
+    private string countdownText = "5";
+    private System.Timers.Timer? countdownTimer;
+    private System.Timers.Timer? spinTimer;
+    
+    // Chips
+    private readonly List<(string Text, double Value)> chips = new()
+    {
+        ("1", 1), ("5", 5), ("10", 10), ("50", 50), ("100", 100)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            user = authState.User;
+            
+            if (user?.Identity?.IsAuthenticated != true)
+            {
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            userId = int.Parse(user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+            
+            await LoadUserData();
+            await LoadGameData();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error initializing roulette component");
+            errorMessage = "Error loading roulette game";
+        }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            countdownTimer = new System.Timers.Timer(1000);
+            countdownTimer.Elapsed += async (sender, e) => await UpdateCountdown();
+            
+            spinTimer = new System.Timers.Timer(5000);
+            spinTimer.Elapsed += async (sender, e) => await FinishSpin();
+            spinTimer.AutoReset = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        countdownTimer?.Dispose();
+        spinTimer?.Dispose();
+    }
+
+    private async Task UpdateCountdown()
+    {
+        if (int.TryParse(countdownText, out int seconds) && seconds > 1)
+        {
+            countdownText = (seconds - 1).ToString();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task StartSpinAnimation()
+    {
+        if (!CanSpin() || showSpinAnimation)
+            return;
+
+        showSpinAnimation = true;
+        showResult = false;
+        isCalculating = false;
+        countdownText = "5";
+        
+        countdownTimer?.Start();
+        spinTimer?.Start();
+        
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FinishSpin()
+    {
+        try
+        {
+            countdownTimer?.Stop();
+            
+            isCalculating = true;
+            countdownText = "Calculating...";
+            await InvokeAsync(StateHasChanged);
+            
+            await Task.Delay(1000);
+            await ExecuteSpin();
+            await Task.Delay(2000);
+            
+            showSpinAnimation = false;
+            isCalculating = false;
+            
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error finishing spin animation");
+            showSpinAnimation = false;
+            isCalculating = false;
+            errorMessage = "An error occurred during the spin";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ExecuteSpin()
+    {
+        try
+        {
+            double totalAmount = currentBets.Sum(b => b.Amount);
+            
+            if (totalAmount < minBet)
+            {
+                errorMessage = $"Minimum total bet is €{minBet:N2}";
+                return;
+            }
+
+            if (totalAmount > maxBet)
+            {
+                errorMessage = $"Maximum total bet is €{maxBet:N2}";
+                return;
+            }
+
+            var (result, error) = await RouletteService.PlaceBetsAsync(userId, currentBets);
+            
+            if (!string.IsNullOrEmpty(error))
+            {
+                errorMessage = error;
+                return;
+            }
+
+            if (result == null)
+            {
+                errorMessage = "An error occurred while processing your bet";
+                return;
+            }
+
+            // Update last numbers
+            UpdateLastNumbers(result.WinningNumber);
+            
+            // Update game data
+            showResult = true;
+            winningNumber = result.WinningNumber;
+            winningColor = result.Color;
+            totalWin = result.TotalWin;
+            totalBet = result.TotalBet;
+            netWin = result.NetWin;
+            newBalance = result.NewBalance;
+            userBalance = newBalance;
+            winningBets = result.WinningBets;
+
+            await LoadUserData();
+            currentBets.Clear();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error executing spin");
+            errorMessage = "An error occurred while processing your bet";
+        }
+    }
+
+    private void UpdateLastNumbers(int newNumber)
+    {
+        // Füge neue Zahl hinzu
+        lastNumbers.Insert(0, newNumber);
+        
+        // Halte nur die letzten 5 Zahlen
+        if (lastNumbers.Count > 5)
+        {
+            lastNumbers = lastNumbers.Take(5).ToList();
+        }
+    }
+
+    private string? GetNumberColor(int number)
+    {
+        if (number == 0) return "green";
+        return redNumbers.Contains(number) ? "red" : "black";
+    }
+
+    private async Task LoadUserData()
+    {
+        userBalance = await RouletteService.GetUserBalanceAsync(userId);
+        recentGames = await RouletteService.GetUserGameHistoryAsync(userId, 0, 5);
+    }
+
+    private async Task LoadGameData()
+    {
+        var (min, max, active, error) = await RouletteService.GetBetLimitsAsync();
+        if (!string.IsNullOrEmpty(error))
+        {
+            errorMessage = error;
+            return;
+        }
+
+        minBet = min;
+        maxBet = max;
+        isActive = active;
+        betTypes = RouletteService.GetBetTypeDisplayNames();
+        redNumbers = RouletteService.GetRedNumbers();
+        blackNumbers = RouletteService.GetBlackNumbers();
+    }
+
+    private void SelectChip(double chipValue)
+    {
+        selectedChip = chipValue;
+    }
+
+    private void AddStraightUpBet(int number)
+    {
+        if (!isActive)
+        {
+            errorMessage = "Roulette is currently not available";
+            return;
+        }
+
+        var bet = new IRouletteService.RouletteBet
+        {
+            Type = IRouletteService.BetType.StraightUp,
+            Number = number,
+            Amount = selectedChip
+        };
+
+        currentBets.Add(bet);
+        errorMessage = string.Empty;
+    }
+
+    private void AddOutsideBet(IRouletteService.BetType betType)
+    {
+        if (!isActive)
+        {
+            errorMessage = "Roulette is currently not available";
+            return;
+        }
+
+        var bet = new IRouletteService.RouletteBet
+        {
+            Type = betType,
+            Number = null,
+            Amount = selectedChip
+        };
+
+        currentBets.Add(bet);
+        errorMessage = string.Empty;
+    }
+
+    private void RemoveBet(IRouletteService.RouletteBet betToRemove)
+    {
+        currentBets.Remove(betToRemove);
+    }
+
+    private void ClearAllBets()
+    {
+        currentBets.Clear();
+        showResult = false;
+        errorMessage = string.Empty;
+    }
+
+    private void CloseErrorMessage()
+    {
+        errorMessage = string.Empty;
+    }
+
+    private string IsBetActive(IRouletteService.BetType betType, int? number = null)
+    {
+        if (number.HasValue)
+        {
+            return currentBets.Any(b => b.Type == betType && b.Number == number) ? "active" : "";
+        }
+        return currentBets.Any(b => b.Type == betType) ? "active" : "";
+    }
+
+    private string IsBetTypeActive(IRouletteService.BetType betType)
+    {
+        return currentBets.Any(b => b.Type == betType) ? "active" : "";
+    }
+
+    private bool CanSpin()
+    {
+        if (!isActive || !currentBets.Any() || currentBets.Sum(b=>b.Amount)>userBalance)
+            return false;
+
+        double totalAmount = currentBets.Sum(b => b.Amount);
+        return totalAmount >= minBet && totalAmount <= maxBet;
+    }
+
+    private string GetBetTypeDisplay(IRouletteService.BetType betType)
+    {
+        return betTypes.TryGetValue(betType, out var display) ? display : betType.ToString();
+    }
+
+    private string GetOddsDisplay(IRouletteService.BetType betType)
+    {
+        return betType switch
+        {
+            IRouletteService.BetType.StraightUp => "35",
+            IRouletteService.BetType.Dozen1 or IRouletteService.BetType.Dozen2 or IRouletteService.BetType.Dozen3 => "2",
+            IRouletteService.BetType.Column1 or IRouletteService.BetType.Column2 or IRouletteService.BetType.Column3 => "2",
+            _ => "1"
+        };
+    }
+}

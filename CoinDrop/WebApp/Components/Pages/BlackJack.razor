@@ -1,338 +1,825 @@
-﻿@page "/blackJack"
-<style>
-.table {
-    background: linear-gradient(#0b592f, #064425);
-    border-radius: 12px;
-    padding: 24px;
-    color: #f3d480;
-    font-family: "Segoe UI", Roboto, Arial, sans-serif;
-    max-width: 920px;
-    margin: 18px auto;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
-}
-.header { display:flex; align-items:center; gap:12px; margin-bottom:8px }
-.title { font-weight:700; font-size:28px }
-.row { display:flex; align-items:center; gap:12px }
-.card-stack { display:flex; gap:8px; align-items:flex-end }
-.card {
-    width:84px; height:120px; border-radius:8px; background:#fff; color:#000; display:flex; flex-direction:column; justify-content:space-between; padding:8px; box-shadow:0 4px 8px rgba(0,0,0,0.3);
-}
-.card.small { width:66px; height:96px }
-.card .pips { font-size:20px }
-.controls { margin-left:auto; display:flex; gap:10px }
-.button { background:#b57b24; color:white; border-radius:6px; padding:10px 16px; cursor:pointer; border:0; font-weight:600 }
-.button.secondary { background:#8a6b16 }
-.chips { display:flex; gap:10px; margin:12px 0 }
-.chip { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; box-shadow:0 2px 4px rgba(0,0,0,0.3); background:#fff; color:#000 }
-.info-box { border:2px solid rgba(255,255,255,0.08); padding:10px 12px; border-radius:6px; min-width:120px }
-.small-text { font-size:12px; color:#f6e7b2 }
-.center { display:flex; flex-direction:column; align-items:center; gap:12px }
-.status { color:#f6e7b2; font-weight:700 }
-.controls-bottom { display:flex; gap:12px; margin-top:12px }
-.result { margin-top:8px; font-weight:700 }
-.flex-between { display:flex; justify-content:space-between; align-items:center }
-.bet-display { font-size:18px; font-weight:700 }
-</style>
+﻿@page "/blackjack"
+@attribute [Authorize]
 
-<div class="table">
-    <div class="flex-between header">
-        <div class="title">ONLINE CASINO — Blackjack</div>
-        <div class="row">
-            <div class="info-box">
-                <div class="small-text">Balance</div>
-                <div>@Balance €</div>
-            </div>
-            <div style="width:12px"></div>
-            <div class="info-box">
-                <div class="small-text">Bet</div>
-                <div>@CurrentBet €</div>
-            </div>
-        </div>
+@using CoinDrop
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using System.Security.Claims
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Authorization
+
+@using CoinDrop.services.interfaces
+@inject IBlackjackService BlackjackService
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Blackjack</PageTitle>
+
+<div class="blackjack-page">
+    <!-- Debug Info -->
+    <div class="debug-info">
+        <div>hasActiveGame: @hasActiveGame</div>
+        <div>Status: @currentGameStatus</div>
+        <div>Cards: @playerCards.Count / @dealerCards.Count</div>
+        <div>UserID: @currentUserId</div>
     </div>
 
-    <div class="row" style="justify-content:space-between;">
-        <div style="flex:1">
-            <div class="small-text">Dealer</div>
-            <div class="card-stack">
-                @foreach(var c in DealerCards)
+    <!-- Dealer Animation -->
+    @if (showDealerAnimation)
+    {
+        <div class="dealer-animation">
+            <div class="animation-content">
+                <div class="animation-text">Dealer draws cards...</div>
+                <div class="card-animation">
+                    @for (int i = 0; i < 3; i++)
+                    {
+                        <div class="animated-card" style="animation-delay: @(i * 0.2)s"></div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Result Popup -->
+    @if (showResultPopup)
+    {
+        <div class="result-popup-overlay">
+            <div class="result-popup">
+                <div class="result-title @resultClass">@resultMessage</div>
+                
+                @if (winAmount > 0)
                 {
-                    var hidden = c.Hidden && !ShowDealerCards;
-                    <div class="card @(hidden?"small":"")" style="transform: translateY(@(hidden?"18px":"0"));">
-                        @if(hidden)
-                        {
-                            <div style="background:#333; height:100%; border-radius:6px;"></div>
-                        }
-                        else
-                        {
-                            <div class="pips">@c.DisplayTop</div>
-                            <div style="font-size:28px; text-align:center; margin-top:6px;">@c.Symbol</div>
-                            <div style="text-align:right">@c.DisplayBottom</div>
-                        }
-                    </div>
+                    <div class="result-win-amount">+€ @winAmount.ToString("N2")</div>
                 }
-            </div>
-            <div style="margin-top:8px">Dealer total: @DealerVisibleTotal</div>
-        </div>
-
-        <div style="flex:1; text-align:center">
-            <div class="center">
-                <div style="font-size:28px; font-weight:700; color:#f6e7b2">BLACKJACK PAYS 3 TO 2</div>
-                <div class="small-text">Dealer must stand on 17</div>
-                <div class="small-text">Insurance pays 2 to 1 (nicht implementiert)</div>
-            </div>
-        </div>
-
-        <div style="flex:1; text-align:right">
-            <div class="small-text">Player</div>
-            <div class="card-stack" style="justify-content:flex-end">
-                @foreach(var c in PlayerCards)
-                {
-                    <div class="card">
-                        <div class="pips">@c.DisplayTop</div>
-                        <div style="font-size:28px; text-align:center; margin-top:6px;">@c.Symbol</div>
-                        <div style="text-align:right">@c.DisplayBottom</div>
+                
+                <div class="result-details">
+                    <div class="result-detail">
+                        <div class="detail-label">Bet</div>
+                        <div class="detail-value">€ @currentGameBet.ToString("N2")</div>
                     </div>
-                }
+                    <div class="result-detail">
+                        <div class="detail-label">New Balance</div>
+                        <div class="detail-value">€ @userBalance.ToString("N2")</div>
+                    </div>
+                </div>
+                <button class="result-new-game-btn" @onclick="@(() => NavigationManager.NavigateTo("/blackjack", forceLoad:true))">
+                    PLAY AGAIN
+                </button>
             </div>
-            <div style="margin-top:8px">Player total: @PlayerBestTotal</div>
         </div>
-    </div>
+    }
 
-    <div class="chips">
-        @foreach(var s in new int[]{1,5,10,25,100})
+    <!-- Main Game Table -->
+    <div class="casino-table">
+        <!-- Error Message -->
+        @if (!string.IsNullOrEmpty(errorMessage))
         {
-            <div class="chip" @onclick="(()=>SetBet(s))">@s</div>
+            <div class="error-message">
+                <span>@errorMessage</span>
+                <button class="close-error-btn" @onclick="ClearErrorMessage">×</button>
+            </div>
+        }
+
+        <!-- Game Header -->
+        <div class="game-header">
+            <div class="balance-display">
+                <div class="balance-label">BALANCE</div>
+                <div class="balance-amount">€ @userBalance.ToString("N2")</div>
+            </div>
+            
+            <div class="current-game-info">
+                @if (hasActiveGame)
+                {
+                    <div class="bet-display">BET: € @currentGameBet.ToString("N2")</div>
+                    <div class="game-status status-@currentGameStatus.ToLower()">
+                        @currentGameStatus
+                    </div>
+                }
+            </div>
+            
+            <div class="game-controls-header">
+                <button class="rules-btn" @onclick="ToggleRules">
+                    <span>ℹ️</span> RULES
+                </button>
+                <button class="new-game-btn" @onclick="NewGame">
+                    <span>🔄</span> NEW GAME
+                </button>
+            </div>
+        </div>
+
+        <!-- Rules Popup -->
+        @if (showRules)
+        {
+            <div class="bet-section">
+                <h4 class="bet-title">BLACKJACK RULES</h4>
+                <div style="text-align: left; color: #d4af37;">
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li>• Beat dealer without going over 21</li>
+                        <li>• Ace = 1 or 11</li>
+                        <li>• Blackjack (A+10) pays 3:2</li>
+                        <li>• Dealer stands on 17</li>
+                        <li>• Double Down: Double bet, 1 card</li>
+                        <li>• Split: Same cards = 2 hands</li>
+                        <li>• Surrender: 50% back in first round</li>
+                    </ul>
+                </div>
+            </div>
+        }
+
+        <!-- Game Area -->
+        <div class="game-area">
+            <!-- Dealer -->
+            <div class="dealer-area">
+                <h3 class="area-title">DEALER</h3>
+                <div class="cards-container">
+                    @if (dealerCards.Any())
+                    {
+                        @foreach (var card in dealerCards)
+                        {
+                            <div class="card-wrapper">
+                                <img src="@card.ImagePath" 
+                                     class="card-img" 
+                                     onerror="this.src='/images/BJCards/card_back.png'" />
+                                @if (card.Value > 0)
+                                {
+                                    <div class="card-value">@card.Value</div>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="card-wrapper">
+                            <div class="card-img" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);"></div>
+                        </div>
+                        <div class="card-wrapper">
+                            <div class="card-img" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);"></div>
+                        </div>
+                    }
+                </div>
+                @if (dealerValue > 0)
+                {
+                    <div class="hand-score">Value: @dealerValue</div>
+                }
+            </div>
+
+            <!-- Player -->
+            <div class="player-area">
+                <h3 class="area-title">PLAYER</h3>
+                
+                <!-- Main Hand -->
+                <div class="hand-label">MAIN HAND</div>
+                <div class="cards-container">
+                    @if (playerCards.Any())
+                    {
+                        @foreach (var card in playerCards)
+                        {
+                            <div class="card-wrapper">
+                                <img src="@card.ImagePath" 
+                                     class="card-img" 
+                                     onerror="this.src='/images/BJCards/card_back.png'" />
+                                <div class="card-value">@card.Value</div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="card-wrapper">
+                            <div class="card-img" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);"></div>
+                        </div>
+                        <div class="card-wrapper">
+                            <div class="card-img" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);"></div>
+                        </div>
+                    }
+                </div>
+                @if (playerValue > 0)
+                {
+                    <div class="hand-score">Value: @playerValue</div>
+                }
+
+                <!-- Split Hand -->
+                @if (splitCards.Any())
+                {
+                    <div class="split-hand-container">
+                        <div class="hand-label">SPLIT HAND</div>
+                        <div class="cards-container">
+                            @foreach (var card in splitCards)
+                            {
+                                <div class="card-wrapper">
+                                    <img src="@card.ImagePath" 
+                                         class="card-img" 
+                                         onerror="this.src='/images/BJCards/card_back.png'" />
+                                    <div class="card-value">@card.Value</div>
+                                </div>
+                            }
+                        </div>
+                        @if (splitValue > 0)
+                        {
+                            <div class="hand-score">Value: @splitValue</div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Bet Selection -->
+        @if (!hasActiveGame)
+        {
+            <div class="bet-section">
+                <h4 class="bet-title">CHOOSE YOUR BET</h4>
+                <div class="chips-row">
+                    @foreach (var chip in availableChips)
+                    {
+                        <button class="chip-btn chip-@chip.Value @(selectedChip == chip.Value ? "selected" : "")"
+                                @onclick="() => SelectChip(chip.Value)">
+                            €@chip.Text
+                        </button>
+                    }
+                </div>
+                <button class="start-game-btn" @onclick="StartGame"
+                        disabled="@(isStartingGame || userBalance < selectedChip)">
+                    @if (isStartingGame)
+                    {
+                        <div class="spinner"></div>
+                    }
+                    else
+                    {
+                        <span>🎮 START GAME (€@selectedChip)</span>
+                    }
+                </button>
+            </div>
+        }
+
+        <!-- Action Buttons -->
+        @if (hasActiveGame && currentGameStatus == "Active")
+        {
+            <div class="action-buttons">
+                <button class="action-btn hit" @onclick="Hit" 
+                        disabled="@(isProcessingAction)">
+                    <span class="action-btn-icon">🃏</span>
+                    HIT
+                </button>
+                
+                <button class="action-btn stand" @onclick="Stand"
+                        disabled="@(isProcessingAction)">
+                    <span class="action-btn-icon">✋</span>
+                    STAND
+                </button>
+                
+                <button class="action-btn double" @onclick="DoubleDown"
+                        disabled="@(!canDoubleDown || isProcessingAction || userBalance < currentGameBet)">
+                    <span class="action-btn-icon">⏫</span>
+                    DOUBLE
+                </button>
+                
+                <button class="action-btn split" @onclick="Split"
+                        disabled="@(!canSplit || isProcessingAction || userBalance < currentGameBet)">
+                    <span class="action-btn-icon">✂️</span>
+                    SPLIT
+                </button>
+                
+                <button class="action-btn surrender" @onclick="Surrender"
+                        disabled="@(playerCards.Count > 2 || isProcessingAction)">
+                    <span class="action-btn-icon">🏳️</span>
+                    SURRENDER
+                </button>
+            </div>
         }
     </div>
-
-    <div class="controls-bottom">
-        <button class="button" @onclick="Deal" disabled="@(!CanDeal)">DEAL</button>
-        <button class="button secondary" @onclick="Hit" disabled="@(!CanHit)">HIT</button>
-        <button class="button secondary" @onclick="Stand" disabled="@(!CanStand)">STAND</button>
-
-        <div style="margin-left:12px" class="status">@StatusMessage</div>
-    </div>
-
-    <div class="result">@RoundResultMessage</div>
 </div>
-
 @code {
-    enum Rank { Two=2, Three=3, Four=4, Five=5, Six=6, Seven=7, Eight=8, Nine=9, Ten=10, Jack=11, Queen=12, King=13, Ace=1 }
-    enum Suit { Clubs, Diamonds, Hearts, Spades }
-
-    record Card(Rank Rank, Suit Suit)
+    // User Data
+    private ApplicationUser? currentUser;
+    private string currentUserId = "";
+    private double userBalance;
+    
+    // Game State
+    private bool hasActiveGame = false;
+    private double currentGameBet = 0;
+    private string currentGameStatus = "";
+    private double winAmount = 0;
+    
+    // Cards Data
+    private List<CardResponse> playerCards = new();
+    private List<CardResponse> dealerCards = new();
+    private List<CardResponse> splitCards = new();
+    private int playerValue = 0;
+    private int dealerValue = 0;
+    private int splitValue = 0;
+    
+    // Game Options
+    private bool canSplit = false;
+    private bool canDoubleDown = false;
+    
+    // Bet Selection
+    private double selectedChip = 1;
+    private readonly List<(string Text, double Value)> availableChips = new()
     {
-        public bool Hidden { get; init; } = false;
-        public string Symbol => Rank == Rank.Ace ? "A" : (Rank == Rank.Jack ? "J" : (Rank == Rank.Queen ? "Q" : (Rank == Rank.King ? "K" : ((int)Rank).ToString())));
-        public string DisplayTop => Symbol + GetSuitSymbol(Suit);
-        public string DisplayBottom => GetSuitSymbol(Suit) + Symbol;
-        public int Value => Rank == Rank.Ace ? 11 : Math.Min((int)Rank, 10);
-        static string GetSuitSymbol(Suit s) => s switch { Suit.Clubs => "♣", Suit.Diamonds => "♦", Suit.Hearts => "♥", Suit.Spades => "♠", _ => "" };
+        ("1", 1), ("5", 5), ("10", 10), ("50", 50), ("100", 100)
+    };
+    
+    // UI State
+    private bool showRules = false;
+    private bool showResultPopup = false;
+    private string errorMessage = "";
+    private string resultMessage = "";
+    private string resultClass = "";
+    private bool showDealerAnimation = false;
+    
+    // Processing State
+    private bool isProcessingAction = false;
+    private bool isStartingGame = false;
+    private string currentAction = "";
+    
+    // Response Models
+    private class CardResponse
+    {
+        public string ValueName { get; set; } = "";
+        public string SuitName { get; set; } = "";
+        public string ImagePath { get; set; } = "";
+        public string ImageName { get; set; } = "";
+        public int Value { get; set; }
+        public bool IsAce { get; set; }
+        public bool IsFaceCard { get; set; }
     }
-
-    List<Card> Deck = new();
-    List<Card> PlayerCards = new();
-    List<Card> DealerCards = new();
-
-    Random rng = new();
-
-    int Balance { get; set; } = 1000;
-    int CurrentBet { get; set; } = 10;
-
-    bool InRound = false;
-    bool ShowDealerCards = false;
-
-    string StatusMessage = "";
-    string RoundResultMessage = "";
-
-    protected override void OnInitialized()
+    
+    protected override async Task OnInitializedAsync()
     {
-        BuildDeck();
-        Shuffle();
+        await LoadUserData();
+        await LoadGameState();
     }
-
-    void BuildDeck()
+    
+    // LÖSUNG 4: Dedizierte Balance-Aktualisierungsfunktion
+    private async Task RefreshUserBalance()
     {
-        Deck.Clear();
-        foreach(Suit s in Enum.GetValues(typeof(Suit)))
-        foreach(Rank r in Enum.GetValues(typeof(Rank)))
-            Deck.Add(new Card(r,s));
-    }
-
-    void Shuffle()
-    {
-        for(int i=Deck.Count-1;i>0;i--)
+        try
         {
-            int j = rng.Next(i+1);
-            var tmp = Deck[i]; Deck[i]=Deck[j]; Deck[j]=tmp;
+            if (!string.IsNullOrEmpty(currentUserId))
+            {
+                currentUser = await UserManager.FindByIdAsync(currentUserId);
+                if (currentUser != null)
+                {
+                    userBalance = currentUser.TotalBalance;
+                    Console.WriteLine($"Balance refreshed: €{userBalance:N2}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error refreshing balance: {ex.Message}");
         }
     }
-
-    Card Draw(bool hidden=false)
+    
+    private async Task LoadUserData()
     {
-        if(Deck.Count==0) { BuildDeck(); Shuffle(); }
-        var c = Deck[0]; Deck.RemoveAt(0);
-        return c with { Hidden = hidden };
-    }
-
-    bool CanDeal => !InRound && Balance >= CurrentBet;
-    bool CanHit => InRound && !RoundFinished && !PlayerBusted && !PlayerStood;
-    bool CanStand => InRound && !RoundFinished && !PlayerStood;
-
-    bool PlayerStood = false;
-    bool RoundFinished = false;
-
-    void SetBet(int amount)
-    {
-        if(InRound) return;
-        CurrentBet = amount;
-    }
-
-    void Deal()
-    {
-        RoundResultMessage = "";
-        StatusMessage = "";
-        InRound = true; PlayerStood = false; RoundFinished = false; ShowDealerCards=false;
-        PlayerCards.Clear(); DealerCards.Clear();
-        if(Balance < CurrentBet) { StatusMessage = "Nicht genug Guthaben"; InRound=false; return; }
-
-        Balance -= CurrentBet;
-
-        // Deal
-        PlayerCards.Add(Draw());
-        DealerCards.Add(Draw());
-        PlayerCards.Add(Draw());
-        DealerCards.Add(Draw(hidden:true)); // dealer second card hidden
-
-        // auto-check blackjack
-        if (IsBlackjack(PlayerCards) || IsBlackjack(DealerCards))
+        try
         {
-            ShowDealerCards = true;
-            EvaluateRound();
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            
+            if (user.Identity?.IsAuthenticated == true)
+            {
+                currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+                
+                if (!string.IsNullOrEmpty(currentUserId))
+                {
+                    currentUser = await UserManager.FindByIdAsync(currentUserId);
+                    if (currentUser != null)
+                    {
+                        userBalance = currentUser.TotalBalance;
+                        
+                        // UI sofort aktualisieren
+                        await InvokeAsync(StateHasChanged);
+                    }
+                }
+            }
+            else
+            {
+                NavigationManager.NavigateTo("/login");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in LoadUserData: {ex.Message}");
         }
     }
-
-    void Hit()
+    
+    private async Task LoadGameState()
     {
-        if(!CanHit) return;
-        PlayerCards.Add(Draw());
-        if(PlayerBusted)
+        try
         {
-            ShowDealerCards = true;
-            EvaluateRound();
+            if (!string.IsNullOrEmpty(currentUserId) && int.TryParse(currentUserId, out int userId))
+            {
+                var response = await BlackjackService.GetGameStateAsync(userId);
+                
+                if (response.Success && response.Data != null)
+                {
+                    var json = JsonSerializer.Serialize(response.Data);
+                    var jsonDoc = JsonDocument.Parse(json);
+                    var root = jsonDoc.RootElement;
+                    
+                    if (root.TryGetProperty("HasActiveGame", out var hasActiveGameElement))
+                    {
+                        hasActiveGame = hasActiveGameElement.GetBoolean();
+                    }
+                    
+                    if (hasActiveGame && root.TryGetProperty("Game", out var gameElement))
+                    {
+                        await UpdateGameData(gameElement);
+                        showResultPopup = false;
+                        
+                        // Balance nach Laden des Spielzustands aktualisieren
+                        await RefreshUserBalance();
+                    }
+                    else
+                    {
+                        ClearGameState();
+                    }
+                }
+                else
+                {
+                    hasActiveGame = false;
+                    ClearGameState();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in LoadGameState: {ex.Message}");
+            errorMessage = "Error loading game state";
+            hasActiveGame = false;
+            ClearGameState();
+        }
+        
+        await InvokeAsync(StateHasChanged);
+    }
+    
+    private async Task UpdateGameData(object gameData)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(gameData);
+            var jsonDoc = JsonDocument.Parse(json);
+            var root = jsonDoc.RootElement;
+            
+            if (root.TryGetProperty("BetAmount", out var betElement))
+                currentGameBet = betElement.GetDouble();
+            
+            if (root.TryGetProperty("Status", out var statusElement))
+                currentGameStatus = statusElement.GetString() ?? "";
+            
+            if (root.TryGetProperty("WinAmount", out var winElement))
+                winAmount = winElement.GetDouble();
+            
+            // Player cards
+            playerCards.Clear();
+            if (root.TryGetProperty("PlayerHand", out var playerHandElement))
+            {
+                foreach (var cardElement in playerHandElement.EnumerateArray())
+                {
+                    playerCards.Add(ParseCard(cardElement));
+                }
+            }
+            
+            // Dealer cards
+            dealerCards.Clear();
+            if (root.TryGetProperty("DealerHand", out var dealerHandElement))
+            {
+                foreach (var cardElement in dealerHandElement.EnumerateArray())
+                {
+                    dealerCards.Add(ParseCard(cardElement));
+                }
+            }
+            
+            // Split cards
+            splitCards.Clear();
+            if (root.TryGetProperty("SplitHand", out var splitHandElement))
+            {
+                foreach (var cardElement in splitHandElement.EnumerateArray())
+                {
+                    splitCards.Add(ParseCard(cardElement));
+                }
+            }
+            
+            // Values
+            if (root.TryGetProperty("PlayerValue", out var playerValueElement))
+                playerValue = playerValueElement.GetInt32();
+            
+            if (root.TryGetProperty("DealerValue", out var dealerValueElement))
+                dealerValue = dealerValueElement.GetInt32();
+            
+            if (root.TryGetProperty("SplitValue", out var splitValueElement))
+                splitValue = splitValueElement.GetInt32();
+            
+            // Options
+            if (root.TryGetProperty("CanSplit", out var canSplitElement))
+                canSplit = canSplitElement.GetBoolean();
+            
+            if (root.TryGetProperty("CanDoubleDown", out var canDoubleDownElement))
+                canDoubleDown = canDoubleDownElement.GetBoolean();
+            
+            hasActiveGame = currentGameStatus == "Active";
+            
+            // Balance SOFORT aktualisieren
+            await RefreshUserBalance();
+            
+            if (currentGameStatus != "Active" && !showResultPopup)
+            {
+                // LÖSUNG 1: Bei Spielende Balance explizit neu laden
+                await Task.Delay(200); // Verzögerung für DB-Update
+                await RefreshUserBalance(); // Finale Balance laden
+                
+                resultMessage = GetResultMessage(currentGameStatus);
+                resultClass = GetResultClass(currentGameStatus);
+                showResultPopup = true;
+            }
+            else
+            {
+                showResultPopup = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in UpdateGameData: {ex.Message}");
+            errorMessage = "Error updating game data";
+            ClearGameState();
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
         }
     }
-
-    void Stand()
+    
+    private CardResponse ParseCard(JsonElement cardElement)
     {
-        if(!CanStand) return;
-        PlayerStood = true;
-        // reveal dealer's hole card
-        ShowDealerCards = true;
-        // play dealer
-        DealerPlay();
-        EvaluateRound();
-    }
-
-    int BestTotal(List<Card> hand)
-    {
-        int total = hand.Sum(c => c.Value);
-        int aces = hand.Count(c => c.Rank == Rank.Ace);
-        while(total>21 && aces>0)
+        return new CardResponse
         {
-            total -= 10; // count one ace as 1 instead of 11
-            aces--;
-        }
-        return total;
+            ValueName = cardElement.TryGetProperty("ValueName", out var vn) ? vn.GetString() ?? "" : "",
+            SuitName = cardElement.TryGetProperty("SuitName", out var sn) ? sn.GetString() ?? "" : "",
+            ImagePath = cardElement.TryGetProperty("ImagePath", out var ip) ? ip.GetString() ?? "" : "",
+            ImageName = cardElement.TryGetProperty("ImageName", out var inProp) ? inProp.GetString() ?? "" : "",
+            Value = cardElement.TryGetProperty("Value", out var v) ? v.GetInt32() : 0,
+            IsAce = cardElement.TryGetProperty("IsAce", out var ia) ? ia.GetBoolean() : false,
+            IsFaceCard = cardElement.TryGetProperty("IsFaceCard", out var ifc) ? ifc.GetBoolean() : false
+        };
     }
-
-    bool PlayerBusted => BestTotal(PlayerCards)>21;
-    bool DealerBusted => BestTotal(DealerCards)>21;
-
-    int PlayerBestTotal => BestTotal(PlayerCards);
-    int DealerVisibleTotal =>
-        DealerCards == null || DealerCards.Count == 0
-            ? 0
-            : (ShowDealerCards ? BestTotal(DealerCards) : DealerCards.First().Value);
-
-    bool IsBlackjack(List<Card> hand) => hand.Count==2 && BestTotal(hand)==21;
-
-    void DealerPlay()
+    
+    private async Task StartGame()
     {
-        // reveal hidden
-        for(int i=0;i<DealerCards.Count;i++)
-            DealerCards[i] = DealerCards[i] with { Hidden=false };
-
-        // Dealer must hit until 17 or higher. Stand on soft 17 (Ace+6) -> as Figma text: "Dealer must stand on 17" so stand on soft 17 as well.
-        while(true)
+        if (userBalance < selectedChip)
         {
-            var total = BestTotal(DealerCards);
-            if(total>=17) break;
-            DealerCards.Add(Draw());
-        }
-    }
-
-    void EvaluateRound()
-    {
-        RoundFinished = true; InRound=false;
-        ShowDealerCards = true;
-
-        var playerBJ = IsBlackjack(PlayerCards);
-        var dealerBJ = IsBlackjack(DealerCards);
-
-        if(playerBJ && dealerBJ)
-        {
-            // push
-            Balance += CurrentBet; // return bet
-            RoundResultMessage = "Push — beide Blackjack";
+            errorMessage = "Insufficient balance";
             return;
         }
-
-        if(playerBJ)
+        
+        try
         {
-            // player wins 3:2
-            int win = (int)Math.Round(CurrentBet * 1.5);
-            Balance += CurrentBet + win;
-            RoundResultMessage = $"Blackjack! Du gewinnst {win} €";
+            isStartingGame = true;
+            ClearMessages();
+            
+            if (!string.IsNullOrEmpty(currentUserId) && int.TryParse(currentUserId, out int userId))
+            {
+                var response = await BlackjackService.StartNewGameAsync(userId, selectedChip);
+                
+                if (response.Success)
+                {
+                    await UpdateGameData(response.Data);
+                    
+                    // LÖSUNG 1: Balance nach Start aktualisieren
+                    await Task.Delay(200);
+                    await RefreshUserBalance();
+                }
+                else
+                {
+                    errorMessage = response.Message;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in StartGame: {ex.Message}");
+            errorMessage = "Error starting game";
+        }
+        finally
+        {
+            isStartingGame = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+    
+    private async Task Hit()
+    {
+        await ExecuteAction("Hit", async () =>
+        {
+            var response = await BlackjackService.HitAsync(int.Parse(currentUserId));
+            await UpdateGameFromResponse(response);
+        });
+    }
+    
+    private async Task Stand()
+    {
+        await ExecuteAction("Stand", async () =>
+        {
+            showDealerAnimation = true;
+            StateHasChanged();
+            
+            await Task.Delay(1500);
+            
+            var response = await BlackjackService.StandAsync(int.Parse(currentUserId));
+            await UpdateGameFromResponse(response);
+            
+            showDealerAnimation = false;
+        });
+    }
+    
+    private async Task DoubleDown()
+    {
+        if (userBalance < currentGameBet)
+        {
+            errorMessage = "Insufficient balance for Double Down";
             return;
         }
-
-        if(dealerBJ)
+        
+        await ExecuteAction("DoubleDown", async () =>
         {
-            RoundResultMessage = "Dealer hat Blackjack — du verlierst";
+            var response = await BlackjackService.DoubleDownAsync(int.Parse(currentUserId));
+            await UpdateGameFromResponse(response);
+        });
+    }
+    
+    private async Task Split()
+    {
+        if (userBalance < currentGameBet)
+        {
+            errorMessage = "Insufficient balance for Split";
             return;
         }
-
-        if(PlayerBusted)
+        
+        await ExecuteAction("Split", async () =>
         {
-            RoundResultMessage = "Du bist überkauft — verloren";
+            var response = await BlackjackService.SplitAsync(int.Parse(currentUserId));
+            await UpdateGameFromResponse(response);
+        });
+    }
+    
+    private async Task Surrender()
+    {
+        await ExecuteAction("Surrender", async () =>
+        {
+            var response = await BlackjackService.SurrenderAsync(int.Parse(currentUserId));
+            await UpdateGameFromResponse(response);
+        });
+    }
+    
+    private async Task ExecuteAction(string actionName, Func<Task> action)
+    {
+        if (string.IsNullOrEmpty(currentUserId) || !int.TryParse(currentUserId, out _))
             return;
-        }
-
-        if(DealerBusted)
+            
+        try
         {
-            // player wins even money
-            Balance += CurrentBet * 2;
-            RoundResultMessage = $"Dealer busted — Du gewinnst {CurrentBet} €";
-            return;
+            isProcessingAction = true;
+            currentAction = actionName;
+            ClearMessages();
+            
+            await action();
+            
+            // LÖSUNG 1: Balance SOFORT nach jeder Aktion aktualisieren
+            await Task.Delay(100);
+            await RefreshUserBalance();
+            
+            // UI aktualisieren
+            await InvokeAsync(StateHasChanged);
         }
-
-        var p = PlayerBestTotal;
-        var d = BestTotal(DealerCards);
-
-        if(p> d)
+        catch (Exception ex)
         {
-            Balance += CurrentBet * 2;
-            RoundResultMessage = $"Du gewinnst {CurrentBet} € (Score {p} vs {d})";
+            Console.WriteLine($"Error in ExecuteAction ({actionName}): {ex.Message}");
+            errorMessage = $"Error in {actionName}";
         }
-        else if(p==d)
+        finally
         {
-            Balance += CurrentBet; // return
-            RoundResultMessage = $"Push (Score {p})";
+            isProcessingAction = false;
+            currentAction = "";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+    
+    // LÖSUNG 1: Optimierte UpdateGameFromResponse Methode
+    private async Task UpdateGameFromResponse(BlackjackGame.GameResponse response)
+    {
+        if (response.Success && response.Data != null)
+        {
+            await UpdateGameData(response.Data);
+            
+            // Balance nach jedem Spielzug neu laden
+            await Task.Delay(100);
+            await RefreshUserBalance();
+            
+            // Wenn Spiel beendet ist, Balance zusätzlich aktualisieren
+            if (currentGameStatus != "Active")
+            {
+                await Task.Delay(200);
+                await RefreshUserBalance(); // Nochmal laden für finale Balance
+            }
         }
         else
         {
-            RoundResultMessage = $"Dealer gewinnt (Score {d} vs {p})";
+            errorMessage = response.Message;
         }
     }
-}
+    
+    // LÖSUNG 2: Verbesserte NewGame Methode
+    private async Task NewGame()
+    {
+        try
+        {
+            showResultPopup = false;
+            ClearGameState();
+            ClearMessages();
+            
+            // Balance SOFORT vor dem Neustart aktualisieren
+            await RefreshUserBalance();
+            
+            // Zustand neu laden
+            await LoadGameState();
+            
+            // LÖSUNG 2: Nochmal Balance aktualisieren (sicherheitshalber)
+            await Task.Delay(50);
+            await RefreshUserBalance();
+            
+            // UI aktualisieren
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in NewGame: {ex.Message}");
+        }
+    }
+    
+    private void ClearGameState()
+    {
+        hasActiveGame = false;
+        currentGameBet = 0;
+        currentGameStatus = "";
+        playerCards.Clear();
+        dealerCards.Clear();
+        splitCards.Clear();
+        playerValue = 0;
+        dealerValue = 0;
+        splitValue = 0;
+        canSplit = false;
+        canDoubleDown = false;
+        resultMessage = "";
+        resultClass = "";
+        winAmount = 0;
+    }
+    
+    private string GetResultMessage(string status)
+    {
+        return status switch
+        {
+            "Blackjack" => "BLACKJACK!",
+            "PlayerWon" => "YOU WIN!",
+            "DealerWon" => "YOU LOSE",
+            "Draw" => "PUSH",
+            "PlayerBusted" => "BUST!",
+            "DealerBusted" => "DEALER BUST!",
+            "Surrendered" => "SURRENDERED",
+            _ => ""
+        };
+    }
+    
+    private string GetResultClass(string status)
+    {
+        return status switch
+        {
+            "Blackjack" or "PlayerWon" or "DealerBusted" => "result-win",
+            "DealerWon" or "PlayerBusted" => "result-loss",
+            "Draw" or "Surrendered" => "result-draw",
+            _ => ""
+        };
+    }
+    
+    private void SelectChip(double chipValue)
+    {
+        selectedChip = chipValue;
+    }
+    
+    private void ToggleRules()
+    {
+        showRules = !showRules;
+    }
+    
+    private void ClearErrorMessage()
+    {
+        errorMessage = "";
+    }
+    
+    private void ClearMessages()
+    {
+        errorMessage = "";
+        resultMessage = "";
+    }
+}}

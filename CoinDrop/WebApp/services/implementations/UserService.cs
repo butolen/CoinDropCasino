@@ -3,8 +3,10 @@ using System.Net.Mail;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
+using CoinDrop;
 using CoinDrop.services.dtos;
 using CoinDrop.services.interfaces;
+using Domain;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -20,6 +22,7 @@ public class UserService : IUserService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ISolanService _solana;
     private readonly IWebHostEnvironment _env;
+    private readonly IRepository<Log> _logRepository;
 
     // TODO: später in config auslagern
     private const string SmtpFrom = "mathiasbutolen@gmail.com";
@@ -37,7 +40,8 @@ public class UserService : IUserService
         RoleManager<IdentityRole<int>> roleManager,
         IHttpContextAccessor httpContextAccessor,
         ISolanService solanaService,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        IRepository<Log> logRepository)
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -45,6 +49,7 @@ public class UserService : IUserService
         _httpContextAccessor = httpContextAccessor;
         _solana = solanaService;
         _env = env;
+        _logRepository = logRepository;
     }
 
     // -------------------------
@@ -91,6 +96,35 @@ public class UserService : IUserService
         => Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(valueEncoded));
 
     // -------------------------
+    // Logging helper
+    // -------------------------
+    public async Task LogUserActionAsync(
+        int? userId,
+        LogActionType actionType,
+        LogUserType userType,
+        string description)
+    {
+        try
+        {
+            var logEntry = new Log
+            {
+                UserId = userId,
+                ActionType = actionType,
+                UserType = userType,
+                Description = description,
+                Date = DateTime.UtcNow
+            };
+
+            await _logRepository.AddAsync(logEntry);
+        }
+        catch (Exception ex)
+        {
+            // Logging-Fehler nicht propagieren, aber für Debugging
+            Console.WriteLine($"Logging failed: {ex.Message}");
+        }
+    }
+
+    // -------------------------
     // Deposit address helper
     // -------------------------
     private async Task EnsureDepositAddressAsync(ApplicationUser user)
@@ -103,7 +137,7 @@ public class UserService : IUserService
     }
 
     // -------------------------
-    // Auth core (dein Stand)
+    // Auth core
     // -------------------------
     public async Task<IdentityResult> RegisterAsync(RegisterRequest regRequest)
     {
@@ -147,6 +181,13 @@ public class UserService : IUserService
 
         await _userManager.AddToRoleAsync(user, defaultRole);
 
+        // ✅ Logging für erfolgreiche Registrierung
+        await LogUserActionAsync(
+            user.Id,
+            LogActionType.UserAction,
+            LogUserType.User,
+            $"User registered successfully: {user.UserName} (ID: {user.Id}, Email: {user.Email})");
+
         // Bestätigungs-Token erzeugen
         var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
         var tokenEncoded = EncodeToken(token);
@@ -182,12 +223,31 @@ public class UserService : IUserService
         if (!valid)
             return SignInResult.Failed;
 
+        // ✅ Logging für erfolgreichen Login
+        await LogUserActionAsync(
+            user.Id,
+            LogActionType.UserAction,
+            LogUserType.User,
+            $"User logged in successfully: {user.UserName} (ID: {user.Id})");
+
         return SignInResult.Success;
     }
 
     public async Task LogoutAsync()
     {
+        var user = await GetCurrentUserAsync(_httpContextAccessor.HttpContext?.User);
+        
         await _signInManager.SignOutAsync();
+
+        // ✅ Optional: Logging für Logout
+        if (user != null)
+        {
+            await LogUserActionAsync(
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"User logged out: {user.UserName} (ID: {user.Id})");
+        }
     }
 
     public async Task<ApplicationUser?> GetCurrentUserAsync(ClaimsPrincipal principal)
@@ -241,7 +301,20 @@ public class UserService : IUserService
         }
 
         user.ProfileImage = $"/uploads/pfp/{fileName}";
-        return await _userManager.UpdateAsync(user);
+        
+        var result = await _userManager.UpdateAsync(user);
+        
+        // ✅ Logging für Profilbild-Upload
+        if (result.Succeeded)
+        {
+            await LogUserActionAsync(
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"User uploaded profile image: {user.UserName} (ID: {user.Id})");
+        }
+
+        return result;
     }
 
     // -------------------------
@@ -266,12 +339,18 @@ public class UserService : IUserService
             $@"<p>Hi {HtmlEncoder.Default.Encode(user.UserName ?? "")}!</p>
                <p><a href=""{HtmlEncoder.Default.Encode(confirmUrl)}"">Confirm email</a></p>");
 
+        // ✅ Logging für erneutes Senden der Bestätigungsmail
+        await LogUserActionAsync(
+            user.Id,
+            LogActionType.UserAction,
+            LogUserType.User,
+            $"User requested email confirmation resend: {user.UserName} (ID: {user.Id})");
+
         return IdentityResult.Success;
     }
 
     // -------------------------
     // Change email: request + confirm
-    // Confirm handled by /confirm-email-change (Razor page or endpoint)
     // -------------------------
     public async Task<IdentityResult> RequestEmailChangeAsync(ClaimsPrincipal principal, string newEmail)
     {
@@ -298,6 +377,13 @@ public class UserService : IUserService
             $@"<p>Click to confirm your new email:</p>
                <p><a href=""{HtmlEncoder.Default.Encode(url)}"">Confirm email change</a></p>");
 
+        // ✅ Logging für Email-Change-Request
+        await LogUserActionAsync(
+            user.Id,
+            LogActionType.UserAction,
+            LogUserType.User,
+            $"User requested email change from {user.Email} to {newEmail}: {user.UserName} (ID: {user.Id})");
+
         return IdentityResult.Success;
     }
 
@@ -307,7 +393,19 @@ public class UserService : IUserService
         if (user == null)
             return IdentityResult.Failed(new IdentityError { Description = "User not found." });
 
-        return await _userManager.ChangeEmailAsync(user, newEmail, token);
+        var result = await _userManager.ChangeEmailAsync(user, newEmail, token);
+        
+        // ✅ Logging für bestätigte Email-Änderung
+        if (result.Succeeded)
+        {
+            await LogUserActionAsync(
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"User confirmed email change to {newEmail}: {user.UserName} (ID: {user.Id})");
+        }
+
+        return result;
     }
 
     public async Task<IdentityResult> RequestUserNameChangeAsync(ClaimsPrincipal principal, string newUserName)
@@ -324,14 +422,23 @@ public class UserService : IUserService
         if (existing != null && existing.Id != user.Id)
             return IdentityResult.Failed(new IdentityError { Description = "Username already in use." });
 
-        // ✅ direkt ändern
-        var res = await _userManager.SetUserNameAsync(user, newUserName);
-        if (!res.Succeeded) return res;
+        var oldUserName = user.UserName;
+        var result = await _userManager.SetUserNameAsync(user, newUserName);
+        
+        if (result.Succeeded)
+        {
+            // Cookie/Claims refreshen (optional aber gut)
+            await _signInManager.RefreshSignInAsync(user);
 
-        // Cookie/Claims refreshen (optional aber gut)
-        await _signInManager.RefreshSignInAsync(user);
+            // ✅ Logging für Username-Änderung
+            await LogUserActionAsync(
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"User changed username from '{oldUserName}' to '{newUserName}': ID: {user.Id}");
+        }
 
-        return IdentityResult.Success;
+        return result;
     }
     
     public async Task<IdentityResult> SendPasswordResetLinkByEmailAsync(string email)
@@ -360,6 +467,13 @@ public class UserService : IUserService
             $@"<p>Click to reset password:</p>
            <p><a href=""{HtmlEncoder.Default.Encode(url)}"">Reset password</a></p>");
 
+        // ✅ Logging für Passwort-Reset-Request
+        await LogUserActionAsync(
+            user.Id,
+            LogActionType.UserAction,
+            LogUserType.User,
+            $"User requested password reset via email: {user.UserName} (ID: {user.Id})");
+
         return IdentityResult.Success;
     }
 
@@ -384,6 +498,13 @@ public class UserService : IUserService
         await SendEmailAsync(user.Email!, "Reset your password",
             $@"<p><a href=""{HtmlEncoder.Default.Encode(url)}"">Reset password</a></p>");
 
+        // ✅ Logging für Passwort-Reset-Request
+        await LogUserActionAsync(
+            user.Id,
+            LogActionType.UserAction,
+            LogUserType.User,
+            $"User requested password reset from settings: {user.UserName} (ID: {user.Id})");
+
         return IdentityResult.Success;
     }
 
@@ -393,6 +514,42 @@ public class UserService : IUserService
         if (user == null)
             return IdentityResult.Failed(new IdentityError { Description = "User not found." });
 
-        return await _userManager.ResetPasswordAsync(user, token, newPassword);
+        var result = await _userManager.ResetPasswordAsync(user, token, newPassword);
+        
+        // ✅ Logging für erfolgreiches Passwort-Reset
+        if (result.Succeeded)
+        {
+            await LogUserActionAsync(
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"User successfully reset password: {user.UserName} (ID: {user.Id})");
+        }
+
+        return result;
+    }
+
+    // -------------------------
+    // Email Confirmation
+    // -------------------------
+    public async Task<IdentityResult> ConfirmEmailAsync(int userId, string token)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+            return IdentityResult.Failed(new IdentityError { Description = "User not found." });
+
+        var result = await _userManager.ConfirmEmailAsync(user, token);
+        
+        // ✅ Logging für Email-Bestätigung
+        if (result.Succeeded)
+        {
+            await LogUserActionAsync(
+                user.Id,
+                LogActionType.UserAction,
+                LogUserType.User,
+                $"User confirmed email: {user.UserName} (ID: {user.Id})");
+        }
+
+        return result;
     }
 }
