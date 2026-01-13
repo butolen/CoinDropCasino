@@ -1,5 +1,6 @@
 @page "/withdraw-crypto"
 @using CoinDrop
+@using CoinDrop.services.interfaces
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 @using WebApp.services.implementations
@@ -7,6 +8,7 @@
 @inject WithdrawlService WithdrawlService
 @inject UserManager<ApplicationUser> UserManager
 @inject AuthenticationStateProvider AuthStateProvider
+@inject ISystemSettingsService SettingsService
 @rendermode InteractiveServer
 
 <div class="withdraw-page">
@@ -14,15 +16,29 @@
         <div class="withdraw-title">Withdraw</div>
 
         <label class="withdraw-label">Network</label>
-        <select class="withdraw-select" @bind="SelectedNetwork" disabled="@IsBusy">
-            <option value="SOL">SOL</option>
+        <select class="withdraw-select" @bind="SelectedNetwork" @bind:event="onchange">
+            @if (IsSolActive)
+            {
+                <option value="SOL">SOL</option>
+            }
+            else
+            {
+                <option value="" disabled selected>No active networks</option>
+            }
         </select>
+
+        @if (!IsSolActive)
+        {
+            <div class="withdraw-error" style="margin-top: 10px;">
+                SOL withdrawals are currently disabled.
+            </div>
+        }
 
         <label class="withdraw-label">Withdrawal Address</label>
         <input class="withdraw-input"
                placeholder="Destination wallet address"
                @bind="WithdrawalAddress"
-               disabled="@IsBusy" />
+               @bind:event="oninput" />
 
         <div class="withdraw-hint">
             Make sure the address is on the selected network.
@@ -32,18 +48,79 @@
         <input class="withdraw-input"
                inputmode="decimal"
                placeholder="e.g. 0.25"
-               @bind="AmountSolText"
-               @bind:event="oninput"
-               disabled="@IsBusy" />
+               value="@AmountSolText"
+               @oninput="HandleAmountInput" />
 
         <div class="amount-preview">
             ≈ @AmountEurText EUR
         </div>
 
+        @if (ShowFeeBreakdown)
+        {
+            <div class="fee-breakdown">
+                <div class="fee-breakdown-title">Fee Breakdown</div>
+                <div class="fee-item">
+                    <span class="fee-label">Amount:</span>
+                    <span class="fee-value">@AmountEur.ToString("F2") EUR</span>
+                </div>
+                <div class="fee-item">
+                    <span class="fee-label">Platform fee (@PlatformFeePercent%):</span>
+                    <span class="fee-value">@PlatformFeeEur.ToString("F2") EUR</span>
+                </div>
+                <div class="fee-item">
+                    <span class="fee-label">Network fee:</span>
+                    <span class="fee-value">@NetworkFeeEur.ToString("F4") EUR</span>
+                </div>
+                <div class="fee-item total">
+                    <span class="fee-label">Total to debit:</span>
+                    <span class="fee-value">@TotalDebitEur.ToString("F2") EUR</span>
+                </div>
+                @if (CurrentUser != null)
+                {
+                    <div class="fee-item">
+                        <span class="fee-label">Available balance:</span>
+                        <span class="fee-value @(CurrentUser.TotalBalance < TotalDebitEur ? "balance-insufficient" : "balance-sufficient")">
+                            @CurrentUser.TotalBalance.ToString("F2") EUR
+                        </span>
+                    </div>
+                }
+                @if (MinWithdrawalEur > 0)
+                {
+                    <div class="fee-item limit">
+                        <span class="fee-label">Minimum withdrawal:</span>
+                        <span class="fee-value">@MinWithdrawalEur.ToString("F2") EUR</span>
+                    </div>
+                }
+                @if (MaxDailyWithdrawalEur > 0)
+                {
+                    <div class="fee-item limit">
+                        <span class="fee-label">Daily limit:</span>
+                        <span class="fee-value">@MaxDailyWithdrawalEur.ToString("F2") EUR</span>
+                    </div>
+                }
+                @if (MaxMonthlyWithdrawalEur > 0)
+                {
+                    <div class="fee-item limit">
+                        <span class="fee-label">Monthly limit:</span>
+                        <span class="fee-value">@MaxMonthlyWithdrawalEur.ToString("F2") EUR</span>
+                    </div>
+                }
+            </div>
+        }
+
         @if (!string.IsNullOrWhiteSpace(SuccessText))
         {
-            <div class="withdraw-hint" style="color: rgba(120,255,170,0.95); margin-top: 10px;">
+            <div class="withdraw-success">
                 @SuccessText
+                @if (!string.IsNullOrWhiteSpace(TransactionHash))
+                {
+                    <div class="transaction-hash">
+                        Transaction: @TransactionHash
+                    </div>
+                }
+                <div class="redirect-hint">
+                    Redirecting to home page in 5 seconds...
+                </div>
             </div>
         }
 
@@ -57,8 +134,8 @@
         <div class="withdraw-actions">
             <button class="btn-primary"
                     @onclick="OnWithdrawClicked"
-                    disabled="@IsBusy">
-                WITHDRAW
+                    disabled="@(!IsSolActive || IsBusy || IsRedirecting)">
+                @(IsBusy ? "PROCESSING..." : "WITHDRAW")
             </button>
 
             <button class="btn-secondary"
@@ -70,38 +147,374 @@
     </div>
 </div>
 
+<style>
+    .withdraw-page {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(
+            ellipse at center,
+            #202020 0%,
+            #0b0b0b 60%,
+            #000 100%
+        );
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        padding: 20px;
+    }
+
+    .withdraw-card {
+        width: 100%;
+        max-width: 420px;
+        min-height: 560px;
+        border-radius: 14px;
+        padding: 26px 28px;
+        background: radial-gradient(
+            ellipse at top,
+            #133326 0%,
+            #0d251c 55%,
+            #081812 100%
+        );
+        box-shadow: 0 16px 40px rgba(0,0,0,0.75);
+        border: 1px solid rgba(246,201,100,0.18);
+        position: relative;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .withdraw-title {
+        text-align: center;
+        color: #f6c964;
+        font-size: 34px;
+        font-weight: 700;
+        margin-bottom: 14px;
+        font-family: Georgia, "Times New Roman", serif;
+    }
+
+    /* ---------- Inputs ---------- */
+    .withdraw-label {
+        display: block;
+        color: rgba(246,201,100,0.85);
+        font-size: 13px;
+        margin: 10px 0 6px 2px;
+    }
+
+    .withdraw-input,
+    .withdraw-select {
+        width: 100%;
+        height: 44px;
+        background: rgba(0,0,0,0.25);
+        border: 1px solid rgba(246,201,100,0.35);
+        border-radius: 6px;
+        color: #f6c964;
+        padding: 0 14px;
+        outline: none;
+        font-size: 16px;
+    }
+
+    .withdraw-input::placeholder {
+        color: rgba(246,201,100,0.4);
+    }
+
+    /* ---------- Hints & Preview ---------- */
+    .withdraw-hint {
+        margin-top: 6px;
+        color: rgba(246,201,100,0.75);
+        font-size: 12px;
+    }
+
+    .withdraw-error {
+        margin-top: 10px;
+        color: rgba(255,120,120,0.95);
+        font-size: 12px;
+    }
+
+    .amount-preview {
+        margin-top: 6px;
+        color: rgba(246,201,100,0.75);
+        font-size: 12px;
+    }
+
+    /* ---------- Fee Breakdown ---------- */
+    .fee-breakdown {
+        margin-top: 15px;
+        margin-bottom: 15px;
+        padding: 16px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 8px;
+        border: 1px solid rgba(246, 201, 100, 0.25);
+        flex-shrink: 0;
+    }
+
+    .fee-breakdown-title {
+        color: #f6c964;
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(246, 201, 100, 0.2);
+        text-align: center;
+    }
+
+    .fee-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+
+    .fee-item.total {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(246, 201, 100, 0.2);
+        font-weight: 600;
+        font-size: 15px;
+    }
+
+    .fee-item.limit {
+        font-size: 12px;
+        color: rgba(246, 201, 100, 0.7);
+        margin-bottom: 4px;
+    }
+
+    .fee-label {
+        color: rgba(246, 201, 100, 0.85);
+    }
+
+    .fee-value {
+        color: #f6c964;
+        font-weight: 500;
+    }
+
+    .balance-sufficient {
+        color: #4cd964 !important;
+    }
+
+    .balance-insufficient {
+        color: #ff6b6b !important;
+    }
+
+    /* Success/Error Messages */
+    .withdraw-success {
+        margin-top: 15px;
+        margin-bottom: 15px;
+        padding: 12px;
+        background: rgba(120, 255, 170, 0.1);
+        border-radius: 8px;
+        color: rgba(120, 255, 170, 0.95);
+        border: 1px solid rgba(120, 255, 170, 0.2);
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .withdraw-error {
+        margin-top: 15px;
+        margin-bottom: 15px;
+        padding: 12px;
+        background: rgba(255, 107, 107, 0.1);
+        border-radius: 8px;
+        color: #ff6b6b;
+        border: 1px solid rgba(255, 107, 107, 0.2);
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .transaction-hash {
+        margin-top: 8px;
+        font-size: 0.85em;
+        word-break: break-all;
+        background: rgba(0, 0, 0, 0.3);
+        padding: 8px;
+        border-radius: 4px;
+        font-family: monospace;
+        color: rgba(255, 255, 255, 0.8);
+    }
+
+    .redirect-hint {
+        margin-top: 8px;
+        font-size: 0.85em;
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* ---------- Actions ---------- */
+    .withdraw-actions {
+        margin-top: auto;
+        padding-top: 15px;
+        display: flex;
+        gap: 18px;
+        flex-shrink: 0;
+    }
+
+    .btn-primary {
+        flex: 1;
+        height: 48px;
+        border-radius: 6px;
+        border: 1px solid #e2b85d;
+        background: linear-gradient(180deg, #f6c964 0%, #d8a748 100%);
+        color: #101010;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+    }
+
+    .btn-primary:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-secondary {
+        flex: 1;
+        height: 48px;
+        border-radius: 6px;
+        border: 1px solid rgba(246,201,100,0.65);
+        background: transparent;
+        color: rgba(246,201,100,0.95);
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+    }
+
+    /* Media Queries für Responsive Design */
+    @@media (max-height: 700px) {
+        .withdraw-card {
+            min-height: auto;
+            height: auto;
+        }
+        
+        .withdraw-page {
+            padding: 10px;
+        }
+        
+        .fee-breakdown {
+            margin-top: 10px;
+            margin-bottom: 10px;
+            padding: 12px;
+        }
+        
+        .withdraw-actions {
+            padding-top: 10px;
+        }
+    }
+</style>
+
 @code {
     private string SelectedNetwork = "SOL";
     private string WithdrawalAddress = "";
     private string AmountSolText = "";
 
-    private bool IsBusy;
+    private bool IsBusy = false;
+    private bool IsRedirecting = false;
+    private bool ShowFeeBreakdown = false;
+    private bool IsSolActive = false;
+    private bool SettingsLoaded = false;
     private string? ErrorText;
     private string? SuccessText;
+    private string? TransactionHash;
 
     private double? SolPriceEur;
+    private ApplicationUser? CurrentUser;
+
+    // Settings
+    private double MinWithdrawalEur = 0;
+    private double MaxDailyWithdrawalEur = 0;
+    private double MaxMonthlyWithdrawalEur = 0;
+    private double PlatformFeePercent = 0;
+    private double MinFeeEur = 0;
+    private double MaxFeeEur = 0;
+
+    // Calculated values
+    private double AmountEur = 0;
+    private double PlatformFeeEur = 0;
+    private double NetworkFeeEur = 0.0005; // Approx 0.000005 SOL
+    private double TotalDebitEur = 0;
 
     private CancellationTokenSource? _cts;
+    private Timer? _redirectTimer;
+    private DateTime _lastAmountUpdate = DateTime.MinValue;
 
     protected override async Task OnInitializedAsync()
     {
-        _cts = new CancellationTokenSource();
+        Console.WriteLine("OnInitializedAsync started");
 
         var auth = await AuthStateProvider.GetAuthenticationStateAsync();
         if (auth.User.Identity?.IsAuthenticated != true)
         {
+            Console.WriteLine("User not authenticated, redirecting to login");
             Nav.NavigateTo("/login");
             return;
         }
 
+        Console.WriteLine("User authenticated");
+
+        // User-Objekt laden
+        var principal = auth.User;
+        CurrentUser = await UserManager.GetUserAsync(principal);
+
+        if (CurrentUser == null)
+        {
+            Console.WriteLine("User not found, redirecting to login");
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        Console.WriteLine($"User loaded: {CurrentUser.Id}, Balance: {CurrentUser.TotalBalance}");
+
+        _cts = new CancellationTokenSource();
+
+        // Settings laden
+        await LoadSettingsAsync();
+
         // Live Preis für Preview
+        await LoadSolPriceAsync();
+
+        Console.WriteLine("OnInitializedAsync completed");
+    }
+
+    private async Task LoadSettingsAsync()
+    {
         try
         {
-            SolPriceEur = await WithdrawlService.GetSolPriceEurAsync(_cts.Token);
+            Console.WriteLine("Loading settings...");
+
+            // Limits abrufen
+            var limits = await SettingsService.GetLimitsAsync();
+            MinWithdrawalEur = limits.MinWithdrawalEur;
+            MaxDailyWithdrawalEur = limits.MaxDailyWithdrawalEur;
+            MaxMonthlyWithdrawalEur = limits.MaxMonthlyWithdrawalEur;
+
+            // Crypto Fees abrufen
+            var cryptoFee = await SettingsService.GetCryptoFeeAsync();
+            IsSolActive = cryptoFee.IsActive;
+            PlatformFeePercent = cryptoFee.WithdrawalFeePercent;
+            MinFeeEur = cryptoFee.MinFeeEur;
+            MaxFeeEur = cryptoFee.MaxFeeEur;
+
+            SettingsLoaded = true;
+            Console.WriteLine($"Settings loaded: SOL active={IsSolActive}, Fee={PlatformFeePercent}%, Min={MinWithdrawalEur}€");
+
+            // UI aktualisieren
+            await InvokeAsync(StateHasChanged);
         }
-        catch
+        catch (Exception ex)
         {
-            SolPriceEur = null; // Preview zeigt dann "—"
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+            ErrorText = "Unable to load system settings. Please try again later.";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadSolPriceAsync()
+    {
+        try
+        {
+            Console.WriteLine("Loading SOL price...");
+            SolPriceEur = await WithdrawlService.GetSolPriceEurAsync(_cts?.Token ?? CancellationToken.None);
+            Console.WriteLine($"SOL price loaded: {SolPriceEur} EUR");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading SOL price: {ex.Message}");
+            SolPriceEur = null;
         }
     }
 
@@ -119,43 +532,174 @@
         }
     }
 
+    private async Task HandleAmountInput(ChangeEventArgs e)
+    {
+        // Direktes Handling ohne Bind-Problem
+        AmountSolText = e.Value?.ToString() ?? "";
+
+        // Debouncing: Nur alle 300ms aktualisieren
+        var now = DateTime.Now;
+        if ((now - _lastAmountUpdate).TotalMilliseconds < 300)
+            return;
+
+        _lastAmountUpdate = now;
+
+        await UpdateFeeBreakdown();
+    }
+
+    private async Task UpdateFeeBreakdown()
+    {
+        if (string.IsNullOrWhiteSpace(AmountSolText))
+        {
+            ShowFeeBreakdown = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!TryParseAmountSol(out var amountSol) || amountSol <= 0.0 || !SolPriceEur.HasValue)
+        {
+            ShowFeeBreakdown = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        Console.WriteLine($"Updating fee breakdown for {amountSol} SOL");
+
+        AmountEur = amountSol * SolPriceEur.Value;
+
+        // Platform fee berechnen
+        PlatformFeeEur = Math.Round(AmountEur * (PlatformFeePercent / 100), 2);
+
+        // Min/Max Fee anwenden
+        if (MinFeeEur > 0 && PlatformFeeEur < MinFeeEur)
+            PlatformFeeEur = MinFeeEur;
+        if (MaxFeeEur > 0 && PlatformFeeEur > MaxFeeEur)
+            PlatformFeeEur = MaxFeeEur;
+
+        TotalDebitEur = AmountEur + PlatformFeeEur + NetworkFeeEur;
+        ShowFeeBreakdown = true;
+
+        Console.WriteLine($"Fees: Platform={PlatformFeeEur}, Total={TotalDebitEur}");
+
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task OnWithdrawClicked()
     {
+        Console.WriteLine("OnWithdrawClicked called");
+
+        if (!IsSolActive)
+        {
+            ErrorText = "SOL withdrawals are currently disabled.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
         ErrorText = null;
         SuccessText = null;
+        TransactionHash = null;
+        ShowFeeBreakdown = false;
 
         if (string.IsNullOrWhiteSpace(WithdrawalAddress))
         {
             ErrorText = "Withdrawal address required.";
+            await InvokeAsync(StateHasChanged);
             return;
         }
 
         if (!TryParseAmountSol(out var amountSol) || amountSol <= 0.0)
         {
             ErrorText = "Invalid SOL amount.";
+            await InvokeAsync(StateHasChanged);
             return;
         }
 
         IsBusy = true;
+        await InvokeAsync(StateHasChanged);
+
         try
         {
-            var sig = await WithdrawAsync(SelectedNetwork, WithdrawalAddress.Trim(), amountSol);
+            // Stelle sicher, dass alles geladen ist
+            if (!SettingsLoaded)
+            {
+                Console.WriteLine("Settings not loaded, loading now...");
+                await LoadSettingsAsync();
+            }
 
-            SuccessText = $"Withdraw submitted. Tx: {sig}";
-            // Optional: nicht sofort weg-navigieren, damit user sig sieht
-            // Nav.NavigateTo("/", forceLoad: true);
+            if (!SolPriceEur.HasValue)
+            {
+                Console.WriteLine("SOL price not loaded, loading now...");
+                await LoadSolPriceAsync();
+            }
+
+            if (!SolPriceEur.HasValue)
+            {
+                ErrorText = "Unable to get current SOL price. Please try again.";
+                return;
+            }
+
+            // Final fee calculation vor der Validierung
+            AmountEur = amountSol * SolPriceEur.Value;
+            PlatformFeeEur = Math.Round(AmountEur * (PlatformFeePercent / 100), 2);
+
+            if (MinFeeEur > 0 && PlatformFeeEur < MinFeeEur)
+                PlatformFeeEur = MinFeeEur;
+            if (MaxFeeEur > 0 && PlatformFeeEur > MaxFeeEur)
+                PlatformFeeEur = MaxFeeEur;
+
+            TotalDebitEur = AmountEur + PlatformFeeEur + NetworkFeeEur;
+
+            // Validierung vor dem Withdraw
+            var validation = await ValidateWithdrawal(amountSol, AmountEur);
+            if (!validation.Valid)
+            {
+                ErrorText = validation.Error;
+                return;
+            }
+
+            Console.WriteLine($"Initiating withdrawal: {amountSol} SOL ({AmountEur:F2} EUR), Total: {TotalDebitEur:F2} EUR");
+
+            var result = await WithdrawAsync(SelectedNetwork, WithdrawalAddress.Trim(), amountSol);
+
+            SuccessText = $"Withdrawal successful! {amountSol:F6} SOL has been sent to your wallet.";
+            TransactionHash = result.Signature;
+
+            // Start redirect timer
+            StartRedirectTimer();
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"Withdraw error: {ex.Message}");
             ErrorText = $"Withdraw failed: {ex.Message}";
         }
         finally
         {
             IsBusy = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
-    private async Task<string> WithdrawAsync(string network, string toAddress, double amountSol)
+    private async Task<(bool Valid, string? Error)> ValidateWithdrawal(double amountSol, double amountEur)
+    {
+        // Min withdrawal check
+        if (amountEur < MinWithdrawalEur)
+            return (false, $"Minimum withdrawal amount is {MinWithdrawalEur:F2} EUR.");
+
+        // Max daily withdrawal check (wird im Service gemacht, aber hier als Preview)
+        if (amountEur > MaxDailyWithdrawalEur)
+            return (false, $"Maximum daily withdrawal is {MaxDailyWithdrawalEur:F2} EUR.");
+
+        // Balance check
+        if (CurrentUser == null)
+            return (false, "User not found.");
+
+        if (CurrentUser.TotalBalance < TotalDebitEur)
+            return (false, $"Insufficient balance. Need {TotalDebitEur:F2} EUR, available: {CurrentUser.TotalBalance:F2} EUR.");
+
+        return (true, null);
+    }
+
+    private async Task<(string Signature, Withdrawal WithdrawalRecord)> WithdrawAsync(string network, string toAddress, double amountSol)
     {
         var auth = await AuthStateProvider.GetAuthenticationStateAsync();
         var principal = auth.User;
@@ -170,7 +714,6 @@
         if (_cts == null)
             _cts = new CancellationTokenSource();
 
-        // Service macht: Treasury -> toAddress, fee payer treasury, BalanceCrypto wird reduziert
         return await WithdrawlService.WithdrawAsync(user.Id, toAddress, amountSol, _cts.Token);
     }
 
@@ -184,8 +727,19 @@
             out amount);
     }
 
+    private void StartRedirectTimer()
+    {
+        _redirectTimer?.Dispose();
+        _redirectTimer = new Timer(async _ =>
+        {
+            IsRedirecting = true;
+            await InvokeAsync(() => { Nav.NavigateTo("/", forceLoad: true); });
+        }, null, 5000, Timeout.Infinite);
+    }
+
     private void OnCancel()
     {
+        if (IsBusy || IsRedirecting) return;
         Nav.NavigateTo("/", forceLoad: true);
     }
 
@@ -195,7 +749,10 @@
         {
             _cts?.Cancel();
             _cts?.Dispose();
+            _redirectTimer?.Dispose();
         }
-        catch { }
+        catch
+        {
+        }
     }
 }

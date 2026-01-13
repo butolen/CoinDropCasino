@@ -85,7 +85,7 @@ builder.Services.AddScoped<IRepository<HardwareDeposit>, HDepositRepo>();
 builder.Services.AddScoped<IRepository<Withdrawal>, WithdrawalRepo>();
 builder.Services.AddScoped<IRepository<Log>, LogRepo>();
 builder.Services.AddScoped<IRepository<SystemSetting>, SystemSettingRepository>();
-
+builder.Services.AddHttpClient<WithdrawlService>();
 // UserService
 builder.Services.AddScoped<IGameHistoryService, GameHistoryService>();
 builder.Services.AddScoped<ITransactionHistoryService, TransactionHistoryService>();
@@ -109,6 +109,17 @@ builder.Services.AddScoped<IIdentitySeeder, IdentitySeeder>();
 
 
 //crypto
+
+
+// PriceService mit HttpClient konfigurieren
+builder.Services.AddHttpClient<PriceService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+builder.Services.AddScoped<IPriceService, PriceService>();
 builder.Services.Configure<CryptoConfig>(
     builder.Configuration.GetSection("Crypto"));
 builder.Services.AddScoped<SolBalanceScannerJob>();
