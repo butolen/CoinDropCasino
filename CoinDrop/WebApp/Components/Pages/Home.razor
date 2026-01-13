@@ -1,117 +1,181 @@
 ﻿@page "/"
 @rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components
+@implements IDisposable
+
 <div class="casino-home">
-    <header class="navbar">
-        <div class="logo">ONLINE CASINO</div>
-        <nav class="nav-links">
-            <a href="/roulette">Roulette</a>
-            <a href="/blackjack">Blackjack</a>
-            <NavLink href="/history">History</NavLink>
-        </nav>
-        <div class="user-area">
-            <button class="cashflow-btn">💲 CASH FLOW ▾</button>
-            <span class="user-icon">👤</span>
+    <!-- Hero Carousel -->
+    <section class="hero-carousel">
+        <div class="carousel-container">
+            <div class="carousel-slide @(currentSlide == 0 ? "active" : "")">
+                <div class="slide-overlay"></div>
+                <img src="https://images.unsplash.com/photo-1533105079780-92b9be482077?w=1600" alt="Casino Table" class="slide-img" />
+                <div class="slide-content">
+                    <div class="slide-badge">EXCLUSIVE</div>
+                    <h1 class="slide-title">LIVE CASINO EXPERIENCE</h1>
+                    <p class="slide-description">Real dealers, real games, real wins. Join the action now!</p>
+                    <button class="btn-play" @onclick='() => Nav.NavigateTo("/roulette")'>
+                        <span class="play-icon">▶</span> PLAY NOW
+                    </button>
+                </div>
+            </div>
+            
+            <div class="carousel-slide @(currentSlide == 1 ? "active" : "")">
+                <div class="slide-overlay"></div>
+                <img src="images/Coinrain.jpg" alt="Roulette" class="slide-img" />
+                <div class="slide-content">
+                    <div class="slide-badge" style="background: linear-gradient(45deg, #FF6B6B, #FF8E53);">JACKPOT</div>
+                    <h1 class="slide-title">MEGA JACKPOTS AWAIT</h1>
+                    <p class="slide-description">Bet high and expect life-changing results!</p>
+                    <button class="btn-play" @onclick='() => Nav.NavigateTo("/slots")'>
+                        <span class="play-icon">🎰</span> SPIN TO WIN
+                    </button>
+                </div>
+            </div>
+            
+            <div class="carousel-slide @(currentSlide == 2 ? "active" : "")">
+                <div class="slide-overlay"></div>
+                <img src="images/blackjack.png" alt="Tournament" class="slide-img" />
+                <div class="slide-content">
+                    <div class="game-badge" style="background: #FF6B6B;">NEW</div>
+                    <h1 class="slide-title">BLACKJACK PRO TOURNAMENT</h1>
+                    <p class="slide-description">Comming Soon...</p>
+                    <button class="btn-play" @onclick='() => Nav.NavigateTo("/blackjack")'>
+                        <span class="play-icon">♠</span> JOIN TABLE
+                    </button>
+                </div>
+            </div>
+            
+            <div class="carousel-controls">
+                <button class="carousel-btn prev" @onclick="PrevSlide">❮</button>
+                <div class="carousel-dots">
+                    <span class="dot @(currentSlide == 0 ? "active" : "")" @onclick='() => GoToSlide(0)'></span>
+                    <span class="dot @(currentSlide == 1 ? "active" : "")" @onclick='() => GoToSlide(1)'></span>
+                    <span class="dot @(currentSlide == 2 ? "active" : "")" @onclick='() => GoToSlide(2)'></span>
+                </div>
+                <button class="carousel-btn next" @onclick="NextSlide">❯</button>
+            </div>
         </div>
-    </header>
+    </section>
 
-    <section class="hero-section">
-        <img src="/images/casino_home.jpeg" alt="Casino" class="hero-img" />
-        <div class="hero-text">
-            <h2>Spin. Bet. Win.</h2>
-            <p>Your game starts now.</p>
-            <button class="spin-btn" @onclick='() => Nav.NavigateTo("/roulette")'>Spin a Round?</button>
+    <!-- Features Section -->
+    <section class="features">
+        <div class="features-container">
+            <h2 class="section-title">WHY PLAY WITH US?</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Secure & Fair</h3>
+                    <p>Certified RNG and SSL encryption for safe gaming</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Instant Withdrawals</h3>
+                    <p>Get your winnings fast with multiple payment methods</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎁</div>
+                    <h3>Daily Bonuses</h3>
+                    <p>Claim free spins and bonus chips every day</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🏆</div>
+                    <h3>Enhanced Privacy Features</h3>
+                    <p>Fully decentraliced - No Verification</p>
+                </div>
+            </div>
+        </div>
+    </section>
 
+    <!-- Games Showcase -->
+    <section class="games-showcase">
+        <div class="showcase-container">
+            <h2 class="section-title">POPULAR GAMES</h2>
+            <div class="games-grid">
+                <div class="game-card" @onclick='() => Nav.NavigateTo("/roulette")'>
+                    <div class="game-image roulette">
+                        <div class="game-overlay">
+                            <span class="play-icon">▶</span>
+                        </div>
+                    </div>
+                    <div class="game-info">
+                        <h3>Roulette</h3>
+                        <p>Spin and Win</p>
+                        <span class="game-badge" style="background: #FF6B6B;">NEW</span>
+                    </div>
+                </div>
+                
+                <div class="game-card" @onclick='() => Nav.NavigateTo("/blackjack")'>
+                    <div class="game-image blackjack">
+                        <div class="game-overlay">
+                            <span class="play-icon">▶</span>
+                        </div>
+                    </div>
+                    <div class="game-info">
+                        <h3>Blackjack</h3>
+                        <p>21 with real dealers</p>
+                        <span class="game-badge">HOT</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Call to Action -->
+    <section class="cta-section">
+        <div class="cta-container">
+            <div class="cta-content">
+                <h2>READY TO PLAY?</h2>
+                <p>Join thousands of players winning big every day</p>
+                <button class="btn-join" @onclick='() => Nav.NavigateTo("/roulette")'>
+                    START PLAYING NOW
+                    <span class="arrow">➜</span>
+                </button>
+            </div>
         </div>
     </section>
 </div>
 
-
 @code {
-[Inject] NavigationManager Nav { get; set; }
+    [Inject] NavigationManager Nav { get; set; }
+    
+    private int currentSlide = 0;
+    private const int totalSlides = 3;
+    private Timer carouselTimer;
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Start automatic carousel rotation
+            carouselTimer = new Timer(async (_) =>
+            {
+                await InvokeAsync(() =>
+                {
+                    NextSlide();
+                    StateHasChanged();
+                });
+            }, null, 5000, 5000);
+        }
+    }
+    
+    private void NextSlide()
+    {
+        currentSlide = (currentSlide + 1) % totalSlides;
+    }
+    
+    private void PrevSlide()
+    {
+        currentSlide = (currentSlide - 1 + totalSlides) % totalSlides;
+    }
+    
+    private void GoToSlide(int slideIndex)
+    {
+        currentSlide = slideIndex;
+    }
+    
+    public void Dispose()
+    {
+        carouselTimer?.Dispose();
+    }
 }
-
-<style>
-    .casino-home{
-        background:#0c0c0c;
-        color:white;
-        font-family:Segoe UI, sans-serif;
-        width:100%;
-        height:100%;
-    }
-    .navbar{
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        padding:1rem 2rem;
-        background:#1a1a1a;
-        font-size:1.2rem;
-    }
-    .logo{
-        color:#e6b34a;
-        font-weight:bold;
-    }
-    .nav-links a{
-        margin:0 1rem;
-        color:white;
-        text-decoration:none;
-    }
-    .user-area{
-        display:flex;
-        align-items:center;
-        gap:1rem;
-    }
-    .cashflow-btn{
-        background:#e6b34a;
-        border:none;
-        padding:0.4rem 1rem;
-        border-radius:5px;
-        cursor:pointer;
-        font-weight:bold;
-    }
-    .user-icon{font-size:1.4rem;}
-    .hero-section{
-        text-align:center;
-        padding-top:2rem;
-    }
-    .hero-img{
-        width:100%;
-        max-height:380px;
-        object-fit:cover;
-        border-radius:10px;
-    }
-    .hero-text{
-        margin-top:2rem;
-    }
-    .spin-btn{
-        background:#e6b34a;
-        border:none;
-        padding:0.7rem 1.2rem;
-        border-radius:6px;
-        font-size:1rem;
-        cursor:pointer;
-        margin-top:1rem;
-    }
-    .casino-home {
-        background: #0c0c0c;
-        color: white;
-        font-family: Segoe UI, sans-serif;
-        width: 100%;
-        min-height: 100vh;   
-        margin: 0;
-        padding: 0;
-    }
-    .hero-section {
-        text-align: center;
-        padding: 0;
-        margin: 0;
-        /*width: 100%;*/
-    }
-    /*
-    .hero-img {
-        width: 100%;
-        height: 100vh;        
-        object-fit: cover;
-        display: block;
-    }
-    */
-</style>

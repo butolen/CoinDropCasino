@@ -49,9 +49,18 @@
             <!-- SETTINGS -->
             <a href="/settings" class="user-icon-link" title="Settings">
                 <span class="user-icon">
-                    <i class="user-circle"></i>
+                    @if (user != null && !string.IsNullOrWhiteSpace(user.ProfileImage))
+                    {
+                        <img src="@user.ProfileImage" alt="User Profile" class="user-circle" />
+                    }
+                    else
+                    {
+                        <i class="user-circle"></i>
+                    }
                 </span>
             </a>
+
+
 
             <!-- BALANCE -->
             <span class="nav-balance" title="Total Balance">
@@ -77,7 +86,6 @@
         }
     </div>
 </nav>
-
 @code {
     private const string RoleCustomer = "customer";
     private const string RoleAdmin = "admin";
@@ -89,11 +97,23 @@
     private double? TotalBalance; // null = noch nicht geladen
     private string BalanceText => TotalBalance is null ? "—" : $"{TotalBalance.Value:0.00} €";
 
+    // Sicherstellen, dass user geladen wird
+    private ApplicationUser user;
+
     private bool _loadedOnce;
 
     protected override async Task OnInitializedAsync()
     {
         await UpdateAuthFlagsOnlyAsync();
+        if (IsAuthenticated)
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdRaw = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (int.TryParse(userIdRaw, out var userId))
+            {
+                user = await UserRepo.GetAsync(userId);
+            }
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -126,7 +146,6 @@
         IsCustomer = IsAuthenticated && user.IsInRole(RoleCustomer);
         IsAdmin = IsAuthenticated && user.IsInRole(RoleAdmin);
 
-        // ✅ Admin sieht alles wie User => Balance auch für Admin laden
         if (!IsAuthenticated)
         {
             TotalBalance = null;

@@ -1,0 +1,647 @@
+.casino-about {
+    background: #0a0a0a;
+    color: white;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* Hero Section */
+.about-hero {
+    position: relative;
+    height: 60vh;
+    background: linear-gradient(rgba(10, 10, 10, 0.8), rgba(10, 10, 10, 0.9)),
+    url('https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1600');
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.hero-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(45deg, rgba(230, 179, 74, 0.1), rgba(255, 142, 83, 0.1));
+}
+
+.hero-container {
+    position: relative;
+    z-index: 2;
+    max-width: 800px;
+    padding: 2rem;
+}
+
+.hero-title {
+    font-size: 4rem;
+    font-weight: 900;
+    margin-bottom: 1rem;
+    background: linear-gradient(45deg, #e6b34a, #ff8e53);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.1;
+}
+
+.hero-subtitle {
+    font-size: 1.4rem;
+    color: #ccc;
+    margin-bottom: 3rem;
+}
+
+.hero-stats {
+    display: flex;
+    justify-content: center;
+    gap: 4rem;
+    margin-top: 3rem;
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.stat-number {
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: #e6b34a;
+    margin-bottom: 0.5rem;
+}
+
+.stat-label {
+    font-size: 1rem;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Mission Section */
+.mission-section {
+    padding: 5rem 2rem;
+    background: #111;
+}
+
+.mission-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.section-title {
+    text-align: center;
+    font-size: 2.5rem;
+    margin-bottom: 3rem;
+    background: linear-gradient(45deg, #e6b34a, #ff8e53);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.mission-text {
+    max-width: 800px;
+    margin: 0 auto 4rem;
+    text-align: center;
+    font-size: 1.1rem;
+    line-height: 1.8;
+    color: #ccc;
+}
+
+.mission-text p {
+    margin-bottom: 1.5rem;
+}
+
+.mission-highlights {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+    margin-top: 3rem;
+}
+
+.highlight {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(230, 179, 74, 0.1);
+    border-radius: 15px;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.highlight:hover {
+    transform: translateY(-5px);
+    border-color: rgba(230, 179, 74, 0.3);
+    box-shadow: 0 10px 30px rgba(230, 179, 74, 0.1);
+}
+
+.highlight-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    display: block;
+}
+
+.highlight h3 {
+    font-size: 1.4rem;
+    margin-bottom: 1rem;
+    color: #e6b34a;
+}
+
+.highlight p {
+    color: #aaa;
+    line-height: 1.6;
+}
+
+/* Payment Section */
+.payment-section {
+    padding: 5rem 2rem;
+    background: #0a0a0a;
+}
+
+.payment-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.section-subtitle {
+    text-align: center;
+    font-size: 1.2rem;
+    color: #ccc;
+    margin-bottom: 4rem;
+}
+
+.payment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 3rem;
+    margin-top: 3rem;
+}
+
+.payment-method {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(230, 179, 74, 0.1);
+    border-radius: 20px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.payment-method:hover {
+    transform: translateY(-10px);
+    border-color: rgba(230, 179, 74, 0.3);
+    box-shadow: 0 15px 35px rgba(230, 179, 74, 0.15);
+}
+
+.payment-method.crypto {
+    border-color: rgba(255, 107, 107, 0.2);
+}
+
+.payment-method.crypto:hover {
+    border-color: rgba(255, 107, 107, 0.4);
+    box-shadow: 0 15px 35px rgba(255, 107, 107, 0.2);
+}
+
+.payment-header {
+    background: linear-gradient(45deg, rgba(230, 179, 74, 0.1), rgba(255, 142, 83, 0.1));
+    padding: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    position: relative;
+}
+
+.payment-method.crypto .payment-header {
+    background: linear-gradient(45deg, rgba(255, 107, 107, 0.1), rgba(255, 142, 83, 0.1));
+}
+
+.payment-icon {
+    font-size: 2.5rem;
+    background: rgba(255, 255, 255, 0.1);
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.payment-header h3 {
+    font-size: 1.5rem;
+    color: #fff;
+    flex: 1;
+}
+
+.payment-badge {
+    background: linear-gradient(45deg, #e6b34a, #ff8e53);
+    color: #000;
+    padding: 0.3rem 1rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+}
+
+.payment-details {
+    padding: 2rem;
+}
+
+.payment-details h4 {
+    color: #e6b34a;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+}
+
+.payment-details ul {
+    list-style: none;
+    padding: 0;
+    margin-bottom: 2rem;
+}
+
+.payment-details li {
+    color: #ccc;
+    margin-bottom: 0.5rem;
+    padding-left: 1.5rem;
+    position: relative;
+}
+
+.payment-details li:before {
+    content: "✓";
+    color: #e6b34a;
+    position: absolute;
+    left: 0;
+}
+
+.crypto-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.crypto-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.8rem;
+    border-radius: 8px;
+    color: #ccc;
+}
+
+.crypto-icon {
+    font-weight: bold;
+    color: #e6b34a;
+}
+
+.crypto-benefits {
+    margin-top: 2rem;
+}
+
+.payment-info {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.info-label {
+    color: #aaa;
+}
+
+.info-value {
+    color: #e6b34a;
+    font-weight: 600;
+}
+
+/* Benefits Section */
+.benefits-section {
+    padding: 5rem 2rem;
+    background: #111;
+}
+
+.benefits-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.benefits-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+    margin-top: 3rem;
+}
+
+.benefit-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(230, 179, 74, 0.1);
+    border-radius: 15px;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.benefit-card:hover {
+    transform: translateY(-10px);
+    border-color: rgba(230, 179, 74, 0.3);
+    box-shadow: 0 10px 30px rgba(230, 179, 74, 0.1);
+}
+
+.benefit-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    display: block;
+}
+
+.benefit-card h3 {
+    font-size: 1.4rem;
+    margin-bottom: 1rem;
+    color: #e6b34a;
+}
+
+.benefit-card p {
+    color: #aaa;
+    line-height: 1.6;
+}
+
+/* How It Works */
+.how-it-works {
+    padding: 5rem 2rem;
+    background: #0a0a0a;
+}
+
+.works-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-top: 3rem;
+    position: relative;
+}
+
+.steps:before {
+    content: '';
+    position: absolute;
+    left: 50px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, #e6b34a, #ff8e53);
+    transform: translateX(-50%);
+}
+
+.step {
+    display: flex;
+    align-items: flex-start;
+    gap: 2rem;
+    position: relative;
+}
+
+.step-number {
+    background: linear-gradient(45deg, #e6b34a, #ff8e53);
+    color: #000;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    z-index: 1;
+}
+
+.step-content {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(230, 179, 74, 0.1);
+    border-radius: 15px;
+    padding: 1.5rem;
+    flex: 1;
+    transition: all 0.3s ease;
+}
+
+.step:hover .step-content {
+    border-color: rgba(230, 179, 74, 0.3);
+    transform: translateX(10px);
+}
+
+.step-content h3 {
+    color: #e6b34a;
+    margin-bottom: 0.5rem;
+    font-size: 1.3rem;
+}
+
+.step-content p {
+    color: #ccc;
+    line-height: 1.6;
+}
+
+/* FAQ Section */
+.faq-section {
+    padding: 5rem 2rem;
+    background: #111;
+}
+
+.faq-container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.faq-grid {
+    margin-top: 3rem;
+}
+
+.faq-item {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(230, 179, 74, 0.1);
+    border-radius: 10px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+
+.faq-question {
+    width: 100%;
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-align: left;
+    padding: 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.faq-question:hover {
+    background: rgba(230, 179, 74, 0.1);
+}
+
+.faq-icon {
+    font-size: 1.5rem;
+    transition: transform 0.3s ease;
+}
+
+.faq-answer {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.faq-answer.open {
+    max-height: 200px;
+}
+
+.faq-answer p {
+    padding: 1.5rem;
+    color: #ccc;
+    line-height: 1.6;
+    margin: 0;
+    border-top: 1px solid rgba(230, 179, 74, 0.1);
+}
+
+/* CTA Section */
+.about-cta {
+    padding: 5rem 2rem;
+    background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+}
+
+.cta-container {
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.cta-content h2 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(45deg, #e6b34a, #ff8e53);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.cta-content p {
+    font-size: 1.2rem;
+    color: #ccc;
+    margin-bottom: 3rem;
+}
+
+.cta-buttons {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn-primary, .btn-secondary {
+    padding: 1rem 2.5rem;
+    border-radius: 50px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.8rem;
+    transition: all 0.3s ease;
+    border: none;
+}
+
+.btn-primary {
+    background: linear-gradient(45deg, #e6b34a, #ff8e53);
+    color: white;
+    box-shadow: 0 5px 20px rgba(230, 179, 74, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(230, 179, 74, 0.5);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 2px solid rgba(230, 179, 74, 0.5);
+}
+
+.btn-secondary:hover {
+    background: rgba(230, 179, 74, 0.2);
+    transform: translateY(-3px);
+}
+
+.btn-icon {
+    font-size: 1.2rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .hero-title {
+        font-size: 2.5rem;
+    }
+
+    .hero-stats {
+        flex-direction: column;
+        gap: 2rem;
+    }
+
+    .payment-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .steps:before {
+        left: 25px;
+    }
+
+    .step {
+        gap: 1rem;
+    }
+
+    .step-number {
+        width: 40px;
+        height: 40px;
+        font-size: 1.2rem;
+    }
+
+    .cta-buttons {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .btn-primary, .btn-secondary {
+        width: 100%;
+        max-width: 300px;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: 2rem;
+    }
+
+    .hero-subtitle {
+        font-size: 1.1rem;
+    }
+
+    .section-title {
+        font-size: 2rem;
+    }
+
+    .crypto-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .faq-question {
+        font-size: 1rem;
+        padding: 1rem;
+    }
+}

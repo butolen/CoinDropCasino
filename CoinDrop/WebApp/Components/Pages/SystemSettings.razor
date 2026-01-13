@@ -93,14 +93,14 @@
                                         }
                                     </div>
                                     
-                                    <div class="field checkbox-field">
+                                    <!-- <div class="field checkbox-field">
                                         <label>
                                             <input type="checkbox" 
                                                    checked="@config.IsActive"
                                                    @onchange="@(e => { config.IsActive = (bool)e.Value!; StateHasChanged(); })" />
                                             Active
                                         </label>
-                                    </div>
+                                    </div> -->
                                 </div>
                                 
                                 <div class="config-actions">
@@ -194,7 +194,7 @@
                                             <div class="error-text">@_errors[$"{feeKey}-maxfee"]</div>
                                         }
                                     </div>
-                                    
+                                    <!--
                                     <div class="field checkbox-field">
                                         <label>
                                             <input type="checkbox" 
@@ -202,7 +202,7 @@
                                                    @onchange="@(e => { fee.IsActive = (bool)e.Value!; StateHasChanged(); })" />
                                             Active
                                         </label>
-                                    </div>
+                                    </div> -->
                                 </div>
                                 
                                 <div class="config-actions">

@@ -7,6 +7,7 @@ namespace CoinDrop.services.interfaces;
 
 public interface IUserService
 {
+    Task SendEmailAsync(string to, string subject, string bodyHtml);
     Task<IdentityResult> RegisterAsync(RegisterRequest request);
     Task<SignInResult> LoginAsync(LoginRequest request);
     Task LogoutAsync();

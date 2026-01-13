@@ -1,3 +1,4 @@
+/* ====== EXISTIERENDE STYLES BEIBEHALTEN ======================================= */
 .casino-navbar {
     display: flex;
     align-items: center;
@@ -10,12 +11,6 @@
     font-size: 16px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
-.btn-deposit{
-    background-color: #f6c964;
-    color: black;
-}
-
-/* ====== PUBLIC / CUSTOMER NAVBAR ======================================= */
 
 .navbar-left {
     display: flex;
@@ -24,18 +19,16 @@
 }
 
 .navbar-logo-img {
-    height: 100px;         /* logo klein wie im Screenshot */
+    height: 100px;
     width: auto;
     margin-right: 8px;
 }
 
-
-
 .navbar-center {
     display: flex;
     align-items: center;
-    gap: 48px;            /* Abstand zwischen Roulette / Blackjack / History */
-    margin-left: 56px;    /* Abstand vom Logo-Bereich */
+    gap: 48px;
+    margin-left: 56px;
 }
 
 .nav-link {
@@ -54,8 +47,6 @@
     color: #ffffff;
 }
 
-/* Rechts: Buttons & User-Icon */
-
 .navbar-right {
     margin-left: auto;
     display: flex;
@@ -63,169 +54,270 @@
     gap: 10px;
 }
 
-/* Generische Button-Basis */
+/* ====== NEUES DESIGN FÜR BUTTONS ============================================= */
 
+/* Balance Container - Modern mit Glas-Effekt */
+.nav-balance {
+    background: linear-gradient(135deg, rgba(246, 201, 100, 0.15) 0%, rgba(246, 201, 100, 0.08) 100%);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(246, 201, 100, 0.3);
+    border-radius: 12px;
+    padding: 10px 20px;
+    min-width: 140px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 15px;
+    color: #f6c964;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(246, 201, 100, 0.1);
+}
+
+.nav-balance:hover {
+    border-color: rgba(246, 201, 100, 0.5);
+    box-shadow: 0 6px 20px rgba(246, 201, 100, 0.15);
+    transform: translateY(-2px);
+}
+
+.nav-balance::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.7s ease;
+}
+
+.nav-balance:hover::before {
+    left: 100%;
+}
+
+/* Balance Label */
+.nav-balance::after {
+    content: 'BALANCE';
+    display: block;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    color: rgba(246, 201, 100, 0.7);
+    margin-top: 2px;
+    text-transform: uppercase;
+}
+
+/* Verbesserte Button-Basis */
 .btn-nav {
     border: none;
-    padding: 6px 16px;
-    font-size: 12px;
+    padding: 10px 22px;
+    font-size: 13px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: 10px;
     outline: none;
-    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
 }
 
-/* LOG IN – dunkler Button wie im Screenshot 2 */
-
-.btn-login {
-    background-color: #101010;
-    border: 1px solid #333333;
-    color: #e0e0e0;
-    padding-inline: 18px;
-}
-
-.btn-login:hover {
-    background-color: #181818;
-    border-color: #444444;
-    transform: translateY(-1px);
-}
-
-/* REGISTER – goldener Button wie im Screenshot 2 */
-
-.btn-register {
-    background-color: #d8a748;
-    border: 1px solid #d8a748;
-    color: #111111;
-    padding-inline: 20px;
-}
-
-.btn-register:hover {
-    background-color: #e2b85d;
-    border-color: #e2b85d;
-    transform: translateY(-1px);
-}
-
-/* LOGOUT – schmaler, gold umrandeter Button */
-
-.btn-logout {
-    background-color: transparent;
-    border: 1px solid #f6c964;
+/* WITHDRAW - Elegant mit Gold-Gradient */
+.btn-withdraw {
+    background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+    border: 1px solid rgba(246, 201, 100, 0.4);
     color: #f6c964;
-    padding-inline: 14px;
+    padding: 10px 24px;
+}
+
+.btn-withdraw:hover {
+    background: linear-gradient(135deg, #3a3a3a 0%, #262626 100%);
+    border-color: rgba(246, 201, 100, 0.7);
+    color: #ffd876;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(246, 201, 100, 0.15);
+}
+
+/* DEPOSIT - Goldener Gradient mit Schatten */
+.btn-deposit {
+    background: linear-gradient(135deg, #f6c964 0%, #d8a748 100%);
+    color: #111111;
+    padding: 10px 26px;
+    border: 1px solid transparent;
+    font-weight: 700;
+    box-shadow: 0 4px 15px rgba(246, 201, 100, 0.3);
+}
+
+.btn-deposit:hover {
+    background: linear-gradient(135deg, #ffd876 0%, #e2b85d 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(246, 201, 100, 0.4);
+}
+
+/* LOGOUT - Roter Akzent */
+.btn-logout {
+    background: linear-gradient(135deg, rgba(255, 59, 48, 0.1) 0%, rgba(255, 59, 48, 0.05) 100%);
+    border: 1px solid rgba(255, 59, 48, 0.3);
+    color: #ff3b30;
+    padding: 10px 20px;
 }
 
 .btn-logout:hover {
-    background-color: #f6c964;
-    color: #111111;
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, rgba(255, 59, 48, 0.2) 0%, rgba(255, 59, 48, 0.1) 100%);
+    border-color: rgba(255, 59, 48, 0.5);
+    color: #ff6259;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 59, 48, 0.1);
 }
 
-/* User-Icon rechts (Screenshot 1) */
-
-.user-icon {
-    display: inline-flex;
+/* User Icon Link verbessern */
+.user-icon-link {
+    display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 4px;
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, rgba(246, 201, 100, 0.1) 0%, rgba(246, 201, 100, 0.05) 100%);
+    border-radius: 50%;
+    border: 1px solid rgba(246, 201, 100, 0.2);
+    transition: all 0.3s ease;
+    margin-right: 8px;
+}
+
+.user-icon-link:hover {
+    background: linear-gradient(135deg, rgba(246, 201, 100, 0.2) 0%, rgba(246, 201, 100, 0.1) 100%);
+    border-color: rgba(246, 201, 100, 0.4);
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 4px 15px rgba(246, 201, 100, 0.15);
 }
 
 .user-circle {
     display: inline-block;
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    background: #f6c964;
+    background: linear-gradient(135deg, #f6c964 0%, #d8a748 100%);
     position: relative;
+    box-shadow: 0 2px 8px rgba(246, 201, 100, 0.3);
 }
-
-/* Kopf */
 
 .user-circle::before {
     content: "";
     position: absolute;
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: #111111;
-    top: 3px;
+    top: 4px;
     left: 50%;
     transform: translateX(-50%);
 }
-
-/* Körper */
 
 .user-circle::after {
     content: "";
     position: absolute;
-    width: 13px;
-    height: 8px;
-    border-radius: 8px 8px 3px 3px;
+    width: 16px;
+    height: 9px;
+    border-radius: 8px 8px 4px 4px;
     background: #111111;
-    bottom: 3px;
+    bottom: 4px;
     left: 50%;
     transform: translateX(-50%);
 }
 
-/* ====== ADMIN NAVBAR (anderes Layout) ================================== */
-
-.admin-navbar-left,
-.admin-navbar-center,
-.admin-navbar-right {
-    display: flex;
-    align-items: center;
+/* Button Ripple Effekt */
+.btn-nav::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.5);
+    opacity: 0;
+    border-radius: 100%;
+    transform: scale(1, 1) translate(-50%);
+    transform-origin: 50% 50%;
 }
 
-.admin-navbar-left {
-    flex: 0 0 auto;
+.btn-nav:focus:not(:active)::after {
+    animation: ripple 1s ease-out;
 }
 
-.admin-navbar-center {
-    flex: 1 1 auto;
-    justify-content: center;
-    gap: 32px;
+@keyframes ripple {
+    0% {
+        transform: scale(0, 0);
+        opacity: 0.5;
+    }
+    100% {
+        transform: scale(20, 20);
+        opacity: 0;
+    }
 }
 
-.admin-navbar-right {
-    flex: 0 0 auto;
-    justify-content: flex-end;
+/* Button Animation für Hover */
+.btn-nav:hover {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.admin-title {
-    font-weight: 700;
-    font-size: 18px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #ff6666;
-}
+/* Responsive Anpassungen */
+@media (max-width: 1100px) {
+    .casino-navbar {
+        padding: 0 20px;
+    }
 
-/* ====== Responsive Tweaks ============================================== */
+    .navbar-center {
+        gap: 32px;
+        margin-left: 40px;
+    }
+
+    .btn-nav {
+        padding: 8px 18px;
+        font-size: 12px;
+    }
+
+    .nav-balance {
+        min-width: 120px;
+        padding: 8px 16px;
+        font-size: 14px;
+    }
+}
 
 @media (max-width: 900px) {
     .casino-navbar {
         padding: 0 16px;
-        font-size: 14px;
+        height: 80px;
+    }
+
+    .navbar-logo-img {
+        height: 70px;
     }
 
     .navbar-center {
         gap: 24px;
-        margin-left: 32px;
+        margin-left: 24px;
     }
 
-    .navbar-title {
-        font-size: 16px;
+    .nav-balance {
+        display: none; /* Auf kleinen Screens Balance ausblenden */
     }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 768px) {
     .navbar-center {
         gap: 16px;
         margin-left: 16px;
     }
 
-    .navbar-title {
-        display: none; /* auf kleineren Screens nur Logo */
+    .btn-nav {
+        padding: 8px 14px;
+        font-size: 11px;
+    }
+
+    .user-icon-link {
+        width: 36px;
+        height: 36px;
+        margin-right: 4px;
     }
 }

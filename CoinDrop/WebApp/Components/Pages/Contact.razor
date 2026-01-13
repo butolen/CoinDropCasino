@@ -1,0 +1,352 @@
+@page "/contact"
+@using System.ComponentModel.DataAnnotations
+@rendermode InteractiveServer
+@inject CoinDrop.services.interfaces.IUserService UserService
+
+<div class="casino-contact">
+    <!-- Hero Section -->
+    <section class="contact-hero">
+        <div class="hero-overlay"></div>
+        <div class="hero-container">
+            <h1 class="hero-title">CONTACT SUPPORT</h1>
+            <p class="hero-subtitle">We're here to help 24/7</p>
+        </div>
+    </section>
+
+    <!-- Contact Form -->
+    <section class="contact-section">
+        <div class="contact-container">
+            <div class="contact-grid">
+                <!-- Contact Info -->
+                <div class="contact-info">
+                    <div class="info-card">
+                        <div class="info-icon">📧</div>
+                        <h3>Email Support</h3>
+                        <p>mathiasbutolen@gmail.com</p>
+                        <small>Response within 24 hours</small>
+                    </div>
+                    
+                    <div class="info-card">
+                        <div class="info-icon">⏰</div>
+                        <h3>Response Time</h3>
+                        <p>24/7 Support</p>
+                        <small>We monitor tickets around the clock</small>
+                    </div>
+                    
+                    <div class="info-card">
+                        <div class="info-icon">🔒</div>
+                        <h3>Privacy First</h3>
+                        <p>All communications are encrypted</p>
+                        <small>Your privacy is our priority</small>
+                    </div>
+                </div>
+
+                <!-- Contact Form -->
+                <div class="contact-form">
+                    <div class="form-header">
+                        <h2>SEND US A MESSAGE</h2>
+                        <p>Describe your issue and we'll get back to you ASAP</p>
+                    </div>
+
+                    <EditForm Model="@message" OnValidSubmit="@SendEmail">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="form-group">
+                            <label for="subject">Subject *</label>
+                            <InputText id="subject" @bind-Value="message.Subject" class="form-control" 
+                                      placeholder="What is this regarding?" />
+                            <ValidationMessage For="@(() => message.Subject)" />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="email">Your Email *</label>
+                            <InputText id="email" @bind-Value="message.Email" class="form-control" 
+                                      placeholder="your.email@example.com" />
+                            <ValidationMessage For="@(() => message.Email)" />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="message">Message *</label>
+                            <InputTextArea id="message" @bind-Value="message.Body" class="form-control" rows="8" 
+                                         placeholder="Describe your issue or question in detail..." />
+                            <ValidationMessage For="@(() => message.Body)" />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="category">Category *</label>
+                            <InputSelect id="category" @bind-Value="message.Category" class="form-control">
+                                <option value="">Select a category</option>
+                                <option value="Technical">Technical Support</option>
+                                <option value="Deposit">Deposit Issue</option>
+                                <option value="Withdrawal">Withdrawal Issue</option>
+                                <option value="Account">Account Issue</option>
+                                <option value="Game">Game Problem</option>
+                                <option value="Feature">Feature Request</option>
+                                <option value="Bug">Bug Report</option>
+                                <option value="Other">Other</option>
+                            </InputSelect>
+                            <ValidationMessage For="@(() => message.Category)" />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="urgency">Urgency</label>
+                            <InputSelect id="urgency" @bind-Value="message.Urgency" class="form-control">
+                                <option value="Low">Low - Can wait</option>
+                                <option value="Normal" selected>Normal</option>
+                                <option value="High">High - Need quick response</option>
+                                <option value="Critical">Critical - Cannot play</option>
+                            </InputSelect>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(statusMessage))
+                        {
+                            <div class="alert @(isSuccess ? "alert-success" : "alert-error")">
+                                @statusMessage
+                            </div>
+                        }
+
+                        <div class="form-actions">
+                            <button type="button" class="btn-secondary" @onclick="ClearForm">
+                                <span class="btn-icon">🗑️</span>
+                                CLEAR
+                            </button>
+                            <button type="submit" class="btn-primary" disabled="@isSending">
+                                <span class="btn-icon">📤</span>
+                                @if (isSending)
+                                {
+                                    <span>SENDING...</span>
+                                }
+                                else
+                                {
+                                    <span>SEND MESSAGE</span>
+                                }
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Quick Links -->
+    <section class="faq-section">
+        <div class="faq-container">
+            <h2 class="section-title">QUICK HELP</h2>
+            <p class="section-subtitle">Before contacting support, check these common solutions:</p>
+            
+            <div class="faq-grid">
+                <div class="faq-item">
+                    <h3>Deposit Issues</h3>
+                    <ul>
+                        <li>Cash deposits appear within 5 minutes</li>
+                        <li>Crypto deposits require 3 confirmations</li>
+                        <li>Check transaction hash in your wallet</li>
+                    </ul>
+                </div>
+                
+                <div class="faq-item">
+                    <h3>Withdrawal Issues</h3>
+                    <ul>
+                        <li>Crypto withdrawals take 5-30 minutes</li>
+                        <li>Minimum withdrawal: €20 equivalent</li>
+                        <li>No maximum limits</li>
+                    </ul>
+                </div>
+                
+                <div class="faq-item">
+                    <h3>Game Problems</h3>
+                    <ul>
+                        <li>Clear browser cache</li>
+                        <li>Try different browser</li>
+                        <li>Check internet connection</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+@code {
+    private class SupportMessage
+    {
+        [Required(ErrorMessage = "Subject is required")]
+        [StringLength(100, ErrorMessage = "Subject too long")]
+        public string Subject { get; set; } = "";
+        
+        [Required(ErrorMessage = "Email is required")]
+        [EmailAddress(ErrorMessage = "Please enter a valid email address")]
+        public string Email { get; set; } = "";
+        
+        [Required(ErrorMessage = "Message is required")]
+        [StringLength(2000, ErrorMessage = "Message too long")]
+        public string Body { get; set; } = "";
+        
+        [Required(ErrorMessage = "Category is required")]
+        public string Category { get; set; } = "";
+        
+        public string Urgency { get; set; } = "Normal";
+    }
+
+    private SupportMessage message = new SupportMessage();
+    private string statusMessage = "";
+    private bool isSending = false;
+    private bool isSuccess = false;
+
+    private async Task SendEmail()
+    {
+        isSending = true;
+        statusMessage = "";
+        isSuccess = false;
+        
+        try
+        {
+            // Email-Inhalt erstellen (korrigierte Version ohne Escape-Probleme)
+            var emailBody = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(45deg, #e6b34a, #ff8e53); color: white; padding: 20px; text-align: center; }
+        .content { background: #f5f5f5; padding: 20px; }
+        .info-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .info-table th { background: #e6b34a; color: white; padding: 10px; text-align: left; }
+        .info-table td { padding: 10px; border: 1px solid #ddd; }
+        .message-box { background: white; padding: 15px; border-left: 4px solid #e6b34a; margin: 20px 0; }
+        .footer { text-align: center; color: #666; font-size: 12px; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='header'>
+            <h1>🎰 CoinDrop Casino Support</h1>
+            <p>New Support Ticket Received</p>
+        </div>
+        
+        <div class='content'>
+            <h2>📋 Ticket Information</h2>
+            <table class='info-table'>
+                <tr>
+                    <th>Category</th>
+                    <td>" + message.Category + @"</td>
+                </tr>
+                <tr>
+                    <th>Urgency</th>
+                    <td>" + message.Urgency + @"</td>
+                </tr>
+                <tr>
+                    <th>From</th>
+                    <td>" + message.Email + @"</td>
+                </tr>
+                <tr>
+                    <th>Subject</th>
+                    <td>" + message.Subject + @"</td>
+                </tr>
+                <tr>
+                    <th>Received</th>
+                    <td>" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + @"</td>
+                </tr>
+            </table>
+            
+            <h2>📝 Message</h2>
+            <div class='message-box'>
+                " + message.Body.Replace("\n", "<br>") + @"
+            </div>
+            
+            <p><strong>⚠️ Please respond to:</strong> " + message.Email + @"</p>
+        </div>
+        
+        <div class='footer'>
+            <p>This is an automated message from CoinDrop Casino Support System</p>
+            <p>© " + DateTime.Now.Year + @" CoinDrop Casino - All rights reserved</p>
+        </div>
+    </div>
+</body>
+</html>";
+
+            // E-Mail senden
+            await UserService.SendEmailAsync(
+                "mathiasbutolen@gmail.com",
+                $"[CoinDrop Support] {message.Subject} - {message.Category} ({message.Urgency})",
+                emailBody
+            );
+            
+            // Bestätigung an User senden
+            var userConfirmationBody = @"
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(45deg, #e6b34a, #ff8e53); color: white; padding: 20px; text-align: center; }
+        .content { background: #f5f5f5; padding: 20px; }
+        .footer { text-align: center; color: #666; font-size: 12px; margin-top: 30px; }
+        .ticket-id { background: white; padding: 10px; border-radius: 5px; font-weight: bold; text-align: center; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='header'>
+            <h1>🎰 CoinDrop Casino</h1>
+            <p>Support Ticket Received</p>
+        </div>
+        
+        <div class='content'>
+            <h3>Hello,</h3>
+            <p>Thank you for contacting CoinDrop Casino Support. We have received your message and will respond as soon as possible.</p>
+            
+            <div class='ticket-id'>
+                Ticket Reference: CD-" + DateTime.Now.ToString("yyyyMMddHHmmss") + @"
+            </div>
+            
+            <p><strong>Your Message:</strong> " + message.Subject + @"</p>
+            <p><strong>Category:</strong> " + message.Category + @"</p>
+            <p><strong>Urgency:</strong> " + message.Urgency + @"</p>
+            
+            <p>Our support team typically responds within 24 hours. For urgent matters, please check our FAQ section for immediate solutions.</p>
+            
+            <p>Best regards,<br>
+            CoinDrop Casino Support Team</p>
+        </div>
+        
+        <div class='footer'>
+            <p>This is an automated confirmation email. Please do not reply to this message.</p>
+            <p>© " + DateTime.Now.Year + @" CoinDrop Casino</p>
+        </div>
+    </div>
+</body>
+</html>";
+
+            // Bestätigungsmail an User senden
+            await UserService.SendEmailAsync(
+                message.Email,
+                $"CoinDrop Support Ticket Received - {message.Subject}",
+                userConfirmationBody
+            );
+            
+            isSuccess = true;
+            statusMessage = "✅ Message sent successfully! We've sent a confirmation to your email. We'll respond within 24 hours.";
+            
+            // Formular nach erfolgreichem Senden leeren
+            ClearForm();
+        }
+        catch (Exception ex)
+        {
+            isSuccess = false;
+            statusMessage = $"❌ Error sending message: {ex.Message}";
+            Console.WriteLine($"Email error: {ex}");
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+
+    private void ClearForm()
+    {
+        message = new SupportMessage();
+    }
+}
+
