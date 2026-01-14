@@ -144,6 +144,7 @@
                                 €@chip.Text
                             </button>
                         }
+
                     </div>
                 </div>
 
@@ -359,6 +360,7 @@
         ("1", 1), ("5", 5), ("10", 10), ("50", 50), ("100", 100)
     };
 
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -512,6 +514,28 @@
             errorMessage = "An error occurred while processing your bet";
         }
     }
+    private async Task PlaceAllInBet()
+    {
+        // Hole die gesamte Balance des Spielers
+        double allInAmount = userBalance;
+
+        // Erstelle eine Wette mit der gesamten Balance
+        var bet = new IRouletteService.RouletteBet
+        {
+            Type = IRouletteService.BetType.StraightUp,  // Du kannst hier den gewünschten Wett-Typ anpassen
+            Amount = allInAmount
+        };
+
+        // Füge die "ALL-IN" Wette hinzu
+        currentBets.Clear();  // Lösche alle aktuellen Wetten
+        currentBets.Add(bet);  // Setze die neue Wette mit dem gesamten Betrag
+
+        // Leere alle Fehlernachrichten
+        errorMessage = string.Empty;
+
+        // Führe den Spin aus
+        await StartSpinAnimation();
+    }
 
     private void UpdateLastNumbers(int newNumber)
     {
@@ -636,6 +660,11 @@
         double totalAmount = currentBets.Sum(b => b.Amount);
         return totalAmount >= minBet && totalAmount <= maxBet;
     }
+    private bool CanPlaceAllIn()
+    {
+        return userBalance > 0;  // Der Button ist nur aktiv, wenn der Spieler ein Guthaben hat
+    }
+
 
     private string GetBetTypeDisplay(IRouletteService.BetType betType)
     {
