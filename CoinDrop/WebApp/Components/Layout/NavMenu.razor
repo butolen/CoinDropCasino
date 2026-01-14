@@ -46,21 +46,34 @@
         }
         else
         {
-            <!-- SETTINGS -->
-            <a href="/settings" class="user-icon-link" title="Settings">
-                <span class="user-icon">
-                    @if (user != null && !string.IsNullOrWhiteSpace(user.ProfileImage))
+            <!-- USER INFO CONTAINER -->
+            <div class="user-info-container">
+                <!-- SETTINGS LINK MIT PROFILBILD -->
+                <a href="/settings" class="user-icon-link" title="Settings">
+                    <span class="user-icon">
+                        @if (user != null && !string.IsNullOrWhiteSpace(user.ProfileImage))
+                        {
+                            <img src="@user.ProfileImage" alt="User Profile" class="user-circle" />
+                        }
+                        else
+                        {
+                            <i class="user-circle"></i>
+                        }
+                    </span>
+                </a>
+                
+                <!-- USERNAME -->
+                <span class="username-display" title="@user?.UserName">
+                    @if (user != null && !string.IsNullOrWhiteSpace(user.UserName))
                     {
-                        <img src="@user.ProfileImage" alt="User Profile" class="user-circle" />
+                        @user.UserName
                     }
                     else
                     {
-                        <i class="user-circle"></i>
+                        <text>User</text>
                     }
                 </span>
-            </a>
-
-
+            </div>
 
             <!-- BALANCE -->
             <span class="nav-balance" title="Total Balance">
@@ -86,6 +99,7 @@
         }
     </div>
 </nav>
+
 @code {
     private const string RoleCustomer = "customer";
     private const string RoleAdmin = "admin";
@@ -173,3 +187,4 @@
         // nix zu tun, kein Event hooked
     }
 }
+
