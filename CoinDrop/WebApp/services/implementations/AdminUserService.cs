@@ -524,46 +524,66 @@ public class AdminUserService : IAdminUserService
         }
     }
     public async Task<bool> UpdateUserBalanceAsync(int userId, double newPhysicalBalance, double newCryptoBalance)
+{
+    try
     {
-        try
+        using var scope = _serviceProvider.CreateScope();
+        var userRepository = scope.ServiceProvider.GetRequiredService<IRepository<ApplicationUser>>();
+    
+        var user = await userRepository.GetByIdAsync(u => u.Id == userId);
+        if (user == null)
         {
-            // EIGENEN Scope für diesen Vorgang erstellen
-            using var scope = _serviceProvider.CreateScope();
-            var userRepository = scope.ServiceProvider.GetRequiredService<IRepository<ApplicationUser>>();
-        
-            var user = await userRepository.GetByIdAsync(u => u.Id == userId);
-            if (user == null)
-            {
-                _logger.LogWarning("User {UserId} not found for balance update", userId);
-                return false;
-            }
-
-            // Alte Werte speichern für Log
-            var oldPhysical = user.BalancePhysical;
-            var oldCrypto = user.BalanceCrypto;
-
-            // Neue Werte setzen
-            user.BalancePhysical = newPhysicalBalance;
-            user.BalanceCrypto = newCryptoBalance;
-        
-            await userRepository.UpdateAsync(user);
-        
-            // Log the action
-            await LogActionAsync(userId, LogActionType.AdminAction,
-                $"Admin updated balances: Physical={oldPhysical:F2}→{newPhysicalBalance:F2}, Crypto={oldCrypto:F2}→{newCryptoBalance:F2}");
-
-            _logger.LogInformation("Updated balances for user {UserId}: Physical={Old}→{New}, Crypto={OldCrypto}→{NewCrypto}",
-                userId, oldPhysical, newPhysicalBalance, oldCrypto, newCryptoBalance);
-
-            // Force logout to update balance in session
-            await ForceLogoutUserAsync(userId);
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error updating balances for user {UserId}", userId);
+            _logger.LogWarning("User {UserId} not found for balance update", userId);
             return false;
         }
+
+        // Alte Werte speichern für Log
+        var oldPhysical = user.BalancePhysical;
+        var oldCrypto = user.BalanceCrypto;
+
+        // Neue Werte setzen
+        user.BalancePhysical = newPhysicalBalance;
+        user.BalanceCrypto = newCryptoBalance;
+    
+        await userRepository.UpdateAsync(user);
+    
+        // Log the action
+        await LogActionAsync(userId, LogActionType.AdminAction,
+            $"Admin updated balances: Physical={oldPhysical:F2}→{newPhysicalBalance:F2}, Crypto={oldCrypto:F2}→{newCryptoBalance:F2}");
+
+        _logger.LogInformation("Updated balances for user {UserId}: Physical={Old}→{New}, Crypto={OldCrypto}→{NewCrypto}",
+            userId, oldPhysical, newPhysicalBalance, oldCrypto, newCryptoBalance);
+
+        // ✅ NUR Security Stamp aktualisieren (kein Force Logout!)
+        await UpdateUserSecurityStampAsync(userId);
+
+        return true;
     }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error updating balances for user {UserId}", userId);
+        return false;
+    }
+}
+
+private async Task UpdateUserSecurityStampAsync(int userId)
+{
+    try
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user == null) return;
+
+        // Nur Security Stamp aktualisieren - erzwingt Token-Refresh
+        await userManager.UpdateSecurityStampAsync(user);
+        
+        _logger.LogInformation("Security stamp updated for user {UserId} (balance changed)", userId);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error updating security stamp for user {UserId}", userId);
+    }
+}
 }
