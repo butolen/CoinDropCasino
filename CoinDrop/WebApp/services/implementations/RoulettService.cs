@@ -1,4 +1,3 @@
-
 using CoinDrop;
 using CoinDrop.services.interfaces;
 using Domain;
@@ -80,8 +79,11 @@ public class RouletteService : IRouletteService
                 return (null, $"Minimum total bet is {minBet}€");
             if (totalBet > maxBet)
                 return (null, $"Maximum total bet is {maxBet}€");
-            if (user.BalanceCrypto < totalBet)
-                return (null, "Insufficient crypto balance");
+            
+            // Prüfe GESAMTBALANCE (Crypto + Physical)
+            double totalBalance = user.BalanceCrypto + user.BalancePhysical;
+            if (totalBalance < totalBet)
+                return (null, "Insufficient total balance");
 
             // Logging der platzierten Wetten
             var betDetails = string.Join(", ", bets.Select(b => 
@@ -114,16 +116,40 @@ public class RouletteService : IRouletteService
                 }
             }
 
-            // Guthaben aktualisieren
-            // WICHTIG: Bei Verlust wird der Einsatz abgezogen, bei Gewinn wird Gewinn hinzugefügt
-            // Netto-Änderung = Gewinn - Gesamteinsatz
-            double oldBalance = user.BalanceCrypto;
-            double netChange = totalWin - totalBet; // Kann negativ sein (Verlust)
-            user.BalanceCrypto += netChange; // Addiere die Netto-Änderung
+            // Alte Balances für Logging speichern
+            double oldCrypto = user.BalanceCrypto;
+            double oldPhysical = user.BalancePhysical;
+            double oldTotal = user.TotalBalance;
             
+            // Netto-Änderung berechnen
+            double netChange = totalWin - totalBet; // Kann negativ sein (Verlust)
+            
+            // Balances entsprechend anpassen
+            if (netChange >= 0)
+            {
+                // Gewinn: IMMER zu Crypto hinzufügen
+                user.BalanceCrypto += netChange;
+            }
+            else
+            {
+                // Verlust: Zuerst von Crypto abziehen, dann von Physical
+                double loss = -netChange; // Positive Zahl (Betrag)
+                
+                // Zuerst von Crypto abziehen
+                double cryptoUsed = Math.Min(loss, user.BalanceCrypto);
+                user.BalanceCrypto -= cryptoUsed;
+                
+                // Rest von Physical abziehen
+                if (loss > cryptoUsed)
+                {
+                    double physicalUsed = loss - cryptoUsed;
+                    user.BalancePhysical -= physicalUsed;
+                }
+            }
+
             await _userRepo.UpdateAsync(user);
 
-            // GameSession erstellen (1 Session für alle Wetten dieses Spins)
+            // GameSession erstellen
             var gameSession = new GameSession
             {
                 UserId = userId,
@@ -131,30 +157,52 @@ public class RouletteService : IRouletteService
                 BetAmount = totalBet,
                 Result = totalWin > totalBet ? GameResult.Win : (totalWin < totalBet ? GameResult.Loss : GameResult.Draw),
                 WinAmount = totalWin,
-                BalanceBefore = oldBalance,
-                BalanceAfter = user.BalanceCrypto,
+                BalanceBefore = oldTotal,
+                BalanceAfter = user.TotalBalance,
                 Timestamp = DateTime.UtcNow
             };
 
             await _gameSessionRepo.AddAsync(gameSession);
 
-            // Ergebnis vorbereiten
-            result.TotalWin = totalWin;
-            result.TotalBet = totalBet;
-            result.NewBalance = user.BalanceCrypto;
-            result.WinningBets = winningBets;
-            result.ResultMessage = GetResultMessage(winningNumber, totalWin, totalBet, result.Color, winningBets);
+            // Ergebnis vorbereiten (NUR MIT INTERFACE-PROPERTIES!)
+            var resultDto = new IRouletteService.RouletteResult
+            {
+                WinningNumber = result.WinningNumber,
+                Color = result.Color,
+                WinningBets = winningBets,
+                TotalWin = totalWin,
+                TotalBet = totalBet,
+                NewBalance = user.TotalBalance, // Interface Property
+                ResultMessage = GetResultMessage(winningNumber, totalWin, totalBet, result.Color, winningBets)
+            };
 
             // Logging des Ergebnisses
+            string balanceChanges = "";
+            if (netChange >= 0)
+            {
+                balanceChanges = $"Gewinn: +{netChange:0.00}€ zu Crypto";
+            }
+            else
+            {
+                double cryptoBefore = oldCrypto;
+                double physicalBefore = oldPhysical;
+                double cryptoAfter = user.BalanceCrypto;
+                double physicalAfter = user.BalancePhysical;
+                
+                balanceChanges = $"Verlust: Crypto {cryptoBefore:0.00}→{cryptoAfter:0.00}€, " +
+                               $"Physical {physicalBefore:0.00}→{physicalAfter:0.00}€";
+            }
+
             await _userService.LogUserActionAsync(
                 userId,
                 LogActionType.Info,
                 LogUserType.User,
                 $"Roulette result: Number {winningNumber} ({result.Color}) - " +
                 $"Total bet: {totalBet}€ - Total win: {totalWin}€ - " +
-                $"Net: {netChange:+0.00;-0.00;0}€ - New Balance: {user.BalanceCrypto}€");
+                $"Net: {netChange:+0.00;-0.00;0}€ - {balanceChanges} - " +
+                $"Total Balance: {user.TotalBalance}€");
 
-            return (result, string.Empty);
+            return (resultDto, string.Empty);
         }
         catch (Exception ex)
         {
@@ -168,6 +216,7 @@ public class RouletteService : IRouletteService
         if (winningNumber == 0)
             return bet.Type == IRouletteService.BetType.StraightUp && bet.Number == 0;
 
+        // Verwende die Properties aus dem Interface
         return bet.Type switch
         {
             IRouletteService.BetType.StraightUp => bet.Number == winningNumber,
@@ -187,12 +236,14 @@ public class RouletteService : IRouletteService
         };
     }
 
+    // ✅ Verwendet NUR die Properties aus dem Interface
     private IRouletteService.RouletteResult AnalyzeResult(int number)
     {
         return new IRouletteService.RouletteResult
         {
             WinningNumber = number,
-            Color = number == 0 ? "green" : (RED_NUMBERS.Contains(number) ? "red" : "black")
+            Color = number == 0 ? "green" : (RED_NUMBERS.Contains(number) ? "red" : "black"),
+            // IsEven, IsLow, IsHigh, Dozen, Column werden automatisch berechnet (siehe Interface)
         };
     }
 
@@ -216,7 +267,7 @@ public class RouletteService : IRouletteService
     public async Task<double> GetUserBalanceAsync(int userId)
     {
         var user = await _userRepo.GetByIdAsync(u => u.Id == userId);
-        return user?.BalanceCrypto ?? 0;
+        return user?.TotalBalance ?? 0;
     }
 
     public async Task<List<GameSession>> GetUserGameHistoryAsync(int userId, int skip = 0, int take = 10)

@@ -4,8 +4,6 @@ using Domain;
 using Microsoft.EntityFrameworkCore;
 using WebApp.services.dtos;
 
-namespace WebApp.services.implementations;
-
 public sealed class SystemSettingsService : ISystemSettingsService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -20,7 +18,6 @@ public sealed class SystemSettingsService : ISystemSettingsService
         _scopeFactory = scopeFactory;
         _logger = logger;
         
-        // Lazy initialization - no blocking .Wait()
         _initializationTask = new Lazy<Task>(InitializeDefaultSettings);
     }
 
@@ -39,7 +36,6 @@ public sealed class SystemSettingsService : ISystemSettingsService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during system settings initialization");
-                // Don't rethrow - allow service to continue with default values
             }
         }
         finally
@@ -53,7 +49,6 @@ public sealed class SystemSettingsService : ISystemSettingsService
         using var scope = _scopeFactory.CreateScope();
         var settingsRepo = scope.ServiceProvider.GetRequiredService<IRepository<SystemSetting>>();
         
-        // Default Game Configs
         var defaultSettings = new List<SystemSetting>
         {
             // Blackjack Config
@@ -64,7 +59,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
                 DataType = "number",
                 Description = "Minimum bet amount for Blackjack in EUR",
                 IsActive = true,
-                ModifiedBy = 1 // System Admin
+                ModifiedBy = 1
             },
             new() {
                 Category = SettingCategory.GameConfig.ToString(),
@@ -114,16 +109,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
                 ModifiedBy = 1
             },
 
-            // Crypto Fees (SOLANA only)
-            new() {
-                Category = SettingCategory.CryptoFees.ToString(),
-                SettingKey = "sol_deposit_fee_percent",
-                SettingValue = "0.5",
-                DataType = "number",
-                Description = "SOL deposit fee percentage (in EUR)",
-                IsActive = true,
-                ModifiedBy = 1
-            },
+            // Crypto Fees (SOLANA only) - OHNE DEPOSIT FEE
             new() {
                 Category = SettingCategory.CryptoFees.ToString(),
                 SettingKey = "sol_withdrawal_fee_percent",
@@ -161,16 +147,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
                 ModifiedBy = 1
             },
 
-            // Limits
-            new() {
-                Category = SettingCategory.Limits.ToString(),
-                SettingKey = "min_deposit_eur",
-                SettingValue = "10",
-                DataType = "number",
-                Description = "Minimum deposit amount in EUR",
-                IsActive = true,
-                ModifiedBy = 1
-            },
+            // Limits - OHNE MIN DEPOSIT
             new() {
                 Category = SettingCategory.Limits.ToString(),
                 SettingKey = "min_withdrawal_eur",
@@ -290,14 +267,12 @@ public sealed class SystemSettingsService : ISystemSettingsService
         using var scope = _scopeFactory.CreateScope();
         var settingsRepo = scope.ServiceProvider.GetRequiredService<IRepository<SystemSetting>>();
         
-        // WICHTIG: Materialisiere die Query komplett IM Scope
         var settings = await settingsRepo.Query()
             .Where(s => s.IsActive)
             .OrderBy(s => s.Category)
             .ThenBy(s => s.SettingKey)
-            .ToListAsync(); // ToListAsync() muss IM Scope sein!
+            .ToListAsync();
         
-        // Konvertiere zu DTOs NACH der Materialisierung
         return settings.Select(MapToDto).ToList();
     }
 
@@ -468,14 +443,14 @@ public sealed class SystemSettingsService : ISystemSettingsService
         return configs;
     }
 
-    // Crypto Fees Methods (SOLANA only for now)
+    // Crypto Fees Methods (SOLANA only) - OHNE DEPOSIT FEE
     public async Task<CryptoFeeDto> GetCryptoFeeAsync(CryptoAsset asset = CryptoAsset.SOL)
     {
         await EnsureInitializedAsync();
         
         var assetKey = asset.ToString().ToLower();
         
-        var depositFee = await GetNumericSettingAsync($"{assetKey}_deposit_fee_percent", 0.5);
+        // Deposit Fee wurde entfernt
         var withdrawalFee = await GetNumericSettingAsync($"{assetKey}_withdrawal_fee_percent", 1.0);
         var minFee = await GetNumericSettingAsync($"{assetKey}_min_fee_eur", 0.10);
         var maxFee = await GetNumericSettingAsync($"{assetKey}_max_fee_eur", 50);
@@ -485,7 +460,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
         {
             Asset = asset,
             Network = NetworkType.Solana,
-            DepositFeePercent = depositFee,
+            DepositFeePercent = 0, // Deposit Fee ist jetzt immer 0
             WithdrawalFeePercent = withdrawalFee,
             MinFeeEur = minFee,
             MaxFeeEur = maxFee,
@@ -501,7 +476,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
         
         var updates = new List<SystemSettingUpdateDto>
         {
-            new() { SettingKey = $"{assetKey}_deposit_fee_percent", SettingValue = fee.DepositFeePercent.ToString("F2"), ModifiedBy = modifiedBy },
+            // Deposit Fee wurde entfernt
             new() { SettingKey = $"{assetKey}_withdrawal_fee_percent", SettingValue = fee.WithdrawalFeePercent.ToString("F2"), ModifiedBy = modifiedBy },
             new() { SettingKey = $"{assetKey}_min_fee_eur", SettingValue = fee.MinFeeEur.ToString("F2"), ModifiedBy = modifiedBy },
             new() { SettingKey = $"{assetKey}_max_fee_eur", SettingValue = fee.MaxFeeEur.ToString("F2"), ModifiedBy = modifiedBy },
@@ -519,7 +494,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
         if (result)
         {
             await LogSettingChangeAsync(modifiedBy,
-                $"Updated {fee.Asset} fees: Deposit={fee.DepositFeePercent:F2}%, Withdrawal={fee.WithdrawalFeePercent:F2}%, Min={fee.MinFeeEur:F2}€, Max={fee.MaxFeeEur:F2}€");
+                $"Updated {fee.Asset} fees: Withdrawal={fee.WithdrawalFeePercent:F2}%, Min={fee.MinFeeEur:F2}€, Max={fee.MaxFeeEur:F2}€");
         }
         
         return result;
@@ -540,14 +515,14 @@ public sealed class SystemSettingsService : ISystemSettingsService
         return fees;
     }
 
-    // Limits Methods
+    // Limits Methods - OHNE MIN DEPOSIT
     public async Task<LimitsDto> GetLimitsAsync()
     {
         await EnsureInitializedAsync();
         
         return new LimitsDto
         {
-            MinDepositEur = await GetNumericSettingAsync("min_deposit_eur", 10),
+            // MinDepositEur wurde entfernt
             MinWithdrawalEur = await GetNumericSettingAsync("min_withdrawal_eur", 20),
             MaxDailyWithdrawalEur = await GetNumericSettingAsync("max_daily_withdrawal_eur", 5000),
             MaxMonthlyWithdrawalEur = await GetNumericSettingAsync("max_monthly_withdrawal_eur", 15000)
@@ -560,7 +535,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
         
         var updates = new List<SystemSettingUpdateDto>
         {
-            new() { SettingKey = "min_deposit_eur", SettingValue = limits.MinDepositEur.ToString("F2"), ModifiedBy = modifiedBy },
+            // Min Deposit wurde entfernt
             new() { SettingKey = "min_withdrawal_eur", SettingValue = limits.MinWithdrawalEur.ToString("F2"), ModifiedBy = modifiedBy },
             new() { SettingKey = "max_daily_withdrawal_eur", SettingValue = limits.MaxDailyWithdrawalEur.ToString("F2"), ModifiedBy = modifiedBy },
             new() { SettingKey = "max_monthly_withdrawal_eur", SettingValue = limits.MaxMonthlyWithdrawalEur.ToString("F2"), ModifiedBy = modifiedBy }
@@ -577,23 +552,18 @@ public sealed class SystemSettingsService : ISystemSettingsService
         if (result)
         {
             await LogSettingChangeAsync(modifiedBy,
-                $"Updated limits: MinDeposit={limits.MinDepositEur:F2}€, MinWithdrawal={limits.MinWithdrawalEur:F2}€, " +
+                $"Updated limits: MinWithdrawal={limits.MinWithdrawalEur:F2}€, " +
                 $"MaxDaily={limits.MaxDailyWithdrawalEur:F2}€, MaxMonthly={limits.MaxMonthlyWithdrawalEur:F2}€");
         }
         
         return result;
     }
 
-    // Helper Methods with EUR-based fees
+    // Helper Methods - Deposit Fee Methoden aktualisiert
     public async Task<double> CalculateDepositFeeAsync(CryptoAsset asset, double amountEur)
     {
-        await EnsureInitializedAsync();
-        
-        var fee = await GetCryptoFeeAsync(asset);
-        if (!fee.IsActive) return 0;
-        
-        var calculatedFee = Math.Round(amountEur * (fee.DepositFeePercent / 100), 2);
-        return Math.Max(calculatedFee, fee.MinFeeEur);
+        // Deposit Fee ist jetzt immer 0
+        return 0;
     }
 
     public async Task<double> CalculateWithdrawalFeeAsync(CryptoAsset asset, double amountEur)
@@ -624,10 +594,8 @@ public sealed class SystemSettingsService : ISystemSettingsService
 
     public async Task<bool> IsDepositAmountValidAsync(double amount)
     {
-        await EnsureInitializedAsync();
-        
-        var limits = await GetLimitsAsync();
-        return amount >= limits.MinDepositEur;
+        // Min Deposit wurde entfernt - alle Beträge sind jetzt gültig
+        return true;
     }
 
     public async Task<bool> IsWithdrawalAmountValidAsync(double amount)
@@ -659,13 +627,7 @@ public sealed class SystemSettingsService : ISystemSettingsService
 
     public async Task<(bool Valid, string? Error)> ValidateDepositAmountAsync(double amount)
     {
-        await EnsureInitializedAsync();
-        
-        var limits = await GetLimitsAsync();
-        
-        if (amount < limits.MinDepositEur)
-            return (false, $"Minimum deposit amount is {limits.MinDepositEur:F2}€");
-        
+        // Min Deposit wurde entfernt - alle Beträge sind gültig
         return (true, null);
     }
 

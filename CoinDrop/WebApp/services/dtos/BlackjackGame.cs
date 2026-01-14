@@ -1,4 +1,3 @@
-// BlackjackModels.cs
 using System.Text.Json.Serialization;
 
 namespace CoinDrop;
@@ -142,6 +141,9 @@ public class BlackjackGame
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? EndedAt { get; set; }
     public double WinAmount { get; set; }
+    
+    // GameSession ID für Datenbank-Referenz
+    public int GameSessionId { get; set; }
     
     // Das echte Deck für dieses Spiel
     public List<Card> Deck { get; set; } = new();
@@ -288,6 +290,7 @@ public class BlackjackGame
             GameId,
             BetAmount,
             Status = Status.ToString(),
+            GameSessionId,
             PlayerHand = PlayerHand.Select(c => new
             {
                 c.ValueName,

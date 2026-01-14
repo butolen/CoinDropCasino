@@ -16,7 +16,6 @@
 <div class="admin-settings-page">
     <div class="panel">
         <div class="panel-title">
-          
             SYSTEM SETTINGS
         </div>
 
@@ -93,14 +92,18 @@
                                         }
                                     </div>
                                     
-                                    <!-- <div class="field checkbox-field">
-                                        <label>
-                                            <input type="checkbox" 
-                                                   checked="@config.IsActive"
-                                                   @onchange="@(e => { config.IsActive = (bool)e.Value!; StateHasChanged(); })" />
-                                            Active
+                                    <div class="field checkbox-field">
+                                        <label class="toggle-label">
+                                            <span>Active:</span>
+                                            <div class="toggle-switch">
+                                                <input type="checkbox" 
+                                                       checked="@config.IsActive"
+                                                       @onchange="@(e => OnGameActiveToggle(config, (bool)e.Value!))"
+                                                       id="@($"toggle-{config.GameType}")" />
+                                                <label for="@($"toggle-{config.GameType}")" class="toggle-slider"></label>
+                                            </div>
                                         </label>
-                                    </div> -->
+                                    </div>
                                 </div>
                                 
                                 <div class="config-actions">
@@ -129,7 +132,6 @@
                         @foreach (var fee in _cryptoFees)
                         {
                             var feeKey = $"fee-{fee.Asset}";
-                            var hasDepositError = _errors.ContainsKey($"{feeKey}-deposit");
                             var hasWithdrawalError = _errors.ContainsKey($"{feeKey}-withdrawal");
                             var hasMinFeeError = _errors.ContainsKey($"{feeKey}-minfee");
                             var hasMaxFeeError = _errors.ContainsKey($"{feeKey}-maxfee");
@@ -143,19 +145,6 @@
                                 </div>
                                 
                                 <div class="config-fields">
-                                    <div class="field">
-                                        <label>Deposit Fee (%)</label>
-                                        <input type="text" 
-                                               @bind-value="@_tempValues[$"{feeKey}-deposit"]"
-                                               @bind-value:event="oninput"
-                                               placeholder="Enter deposit fee %"
-                                               class="@(hasDepositError ? "input-error" : "")" />
-                                        @if (hasDepositError)
-                                        {
-                                            <div class="error-text">@_errors[$"{feeKey}-deposit"]</div>
-                                        }
-                                    </div>
-                                    
                                     <div class="field">
                                         <label>Withdrawal Fee (%)</label>
                                         <input type="text" 
@@ -194,15 +183,19 @@
                                             <div class="error-text">@_errors[$"{feeKey}-maxfee"]</div>
                                         }
                                     </div>
-                                    <!--
+                                    
                                     <div class="field checkbox-field">
-                                        <label>
-                                            <input type="checkbox" 
-                                                   checked="@fee.IsActive"
-                                                   @onchange="@(e => { fee.IsActive = (bool)e.Value!; StateHasChanged(); })" />
-                                            Active
+                                        <label class="toggle-label">
+                                            <span>Active:</span>
+                                            <div class="toggle-switch">
+                                                <input type="checkbox" 
+                                                       checked="@fee.IsActive"
+                                                       @onchange="@(e => OnCryptoActiveToggle(fee, (bool)e.Value!))"
+                                                       id="@($"toggle-crypto-{fee.Asset}")" />
+                                                <label for="@($"toggle-crypto-{fee.Asset}")" class="toggle-slider"></label>
+                                            </div>
                                         </label>
-                                    </div> -->
+                                    </div>
                                 </div>
                                 
                                 <div class="config-actions">
@@ -229,18 +222,7 @@
                 {
                     <div class="config-card wide-card">
                         <div class="config-fields grid-2">
-                            <div class="field">
-                                <label>Min Deposit (EUR)</label>
-                                <input type="text" 
-                                       @bind-value="@_tempValues["limit-mindeposit"]"
-                                       @bind-value:event="oninput"
-                                       placeholder="Enter min deposit"
-                                       class="@(_errors.ContainsKey("limit-mindeposit") ? "input-error" : "")" />
-                                @if (_errors.ContainsKey("limit-mindeposit"))
-                                {
-                                    <div class="error-text">@_errors["limit-mindeposit"]</div>
-                                }
-                            </div>
+                           
                             
                             <div class="field">
                                 <label>Min Withdrawal (EUR)</label>
@@ -449,9 +431,9 @@
         {
             foreach (var config in _gameConfigs)
             {
-                var key = $"game-{config.GameType}";
-                _tempValues[$"{key}-min"] = config.MinBet.ToString("F2");
-                _tempValues[$"{key}-max"] = config.MaxBet.ToString("F2");
+                var gameKey = $"game-{config.GameType}";
+                _tempValues[$"{gameKey}-min"] = config.MinBet.ToString("F2");
+                _tempValues[$"{gameKey}-max"] = config.MaxBet.ToString("F2");
             }
         }
         
@@ -459,11 +441,11 @@
         {
             foreach (var fee in _cryptoFees)
             {
-                var key = $"fee-{fee.Asset}";
-                _tempValues[$"{key}-deposit"] = fee.DepositFeePercent.ToString("F2");
-                _tempValues[$"{key}-withdrawal"] = fee.WithdrawalFeePercent.ToString("F2");
-                _tempValues[$"{key}-minfee"] = fee.MinFeeEur.ToString("F2");
-                _tempValues[$"{key}-maxfee"] = fee.MaxFeeEur.ToString("F2");
+                var feeKey = $"fee-{fee.Asset}";
+                // Deposit Fee Feld wurde entfernt
+                _tempValues[$"{feeKey}-withdrawal"] = fee.WithdrawalFeePercent.ToString("F2");
+                _tempValues[$"{feeKey}-minfee"] = fee.MinFeeEur.ToString("F2");
+                _tempValues[$"{feeKey}-maxfee"] = fee.MaxFeeEur.ToString("F2");
             }
         }
         
@@ -474,6 +456,20 @@
             _tempValues["limit-maxdaily"] = _limits.MaxDailyWithdrawalEur.ToString("F2");
             _tempValues["limit-maxmonthly"] = _limits.MaxMonthlyWithdrawalEur.ToString("F2");
         }
+    }
+    
+    private void OnGameActiveToggle(GameConfigDto config, bool isActive)
+    {
+        config.IsActive = isActive;
+        var gameKey = $"game-{config.GameType}";
+        SaveGameConfig(config, gameKey);
+    }
+    
+    private void OnCryptoActiveToggle(CryptoFeeDto fee, bool isActive)
+    {
+        fee.IsActive = isActive;
+        var feeKey = $"fee-{fee.Asset}";
+        SaveCryptoFee(fee, feeKey);
     }
     
     private async Task SaveGameConfig(GameConfigDto config, string gameKey)
@@ -547,6 +543,7 @@
         // Update config
         config.MinBet = minBet;
         config.MaxBet = maxBet;
+        // IsActive wird bereits über den Toggle gesetzt
         
         try
         {
@@ -567,37 +564,18 @@
         _errors.Clear();
         ClearMessages();
         
-        // Get values
-        var depositStr = _tempValues.GetValueOrDefault($"{feeKey}-deposit", "");
+        // Get values - Deposit Fee wurde entfernt
         var withdrawalStr = _tempValues.GetValueOrDefault($"{feeKey}-withdrawal", "");
         var minFeeStr = _tempValues.GetValueOrDefault($"{feeKey}-minfee", "");
         var maxFeeStr = _tempValues.GetValueOrDefault($"{feeKey}-maxfee", "");
         
         // Validate
         bool hasError = false;
-        double deposit = 0;
         double withdrawal = 0;
         double minFee = 0;
         double maxFee = 0;
         
-        // Deposit fee
-        if (string.IsNullOrWhiteSpace(depositStr))
-        {
-            _errors[$"{feeKey}-deposit"] = "Deposit fee is required";
-            hasError = true;
-        }
-        else if (!double.TryParse(depositStr, out deposit))
-        {
-            _errors[$"{feeKey}-deposit"] = "Must be a valid number";
-            hasError = true;
-        }
-        else if (deposit < 0 || deposit > 100)
-        {
-            _errors[$"{feeKey}-deposit"] = "Must be between 0 and 100";
-            hasError = true;
-        }
-        
-        // Withdrawal fee
+        // Withdrawal fee validation
         if (string.IsNullOrWhiteSpace(withdrawalStr))
         {
             _errors[$"{feeKey}-withdrawal"] = "Withdrawal fee is required";
@@ -665,11 +643,11 @@
             return;
         }
         
-        // Update fee
-        fee.DepositFeePercent = deposit;
+        // Update fee - Deposit Fee wurde entfernt
         fee.WithdrawalFeePercent = withdrawal;
         fee.MinFeeEur = minFee;
         fee.MaxFeeEur = maxFee;
+        // IsActive wird bereits über den Toggle gesetzt
         
         try
         {
@@ -823,158 +801,3 @@
         _errorMessage = "";
     }
 }
-
-<style>
-    /* Entferne Pfeile komplett */
-    input[type="text"]::-webkit-inner-spin-button,
-    input[type="text"]::-webkit-outer-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
-    }
-    
-    input[type="text"] {
-        -moz-appearance: textfield;
-    }
-    
-    /* Error styling */
-    .input-error {
-        border-color: #dc3545 !important;
-        background-color: #fff8f8 !important;
-    }
-    
-    .error-text {
-        color: #dc3545;
-        font-size: 0.85rem;
-        margin-top: 0.25rem;
-    }
-    
-    /* Alert messages */
-    .alert {
-        padding: 1rem;
-        margin-bottom: 1rem;
-        border-radius: 4px;
-        font-weight: 500;
-    }
-    
-    .alert-success {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
-    }
-    
-    .alert-danger {
-        background-color: #f8d7da;
-        border: 1px solid #f5c6cb;
-        color: #721c24;
-    }
-    
-    /* Config layout */
-    .config-actions {
-        margin-top: 1rem;
-        text-align: right;
-    }
-    
-    .config-card .field input {
-        width: 100%;
-        padding: 0.5rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 1rem;
-    }
-    
-    .config-card .field input:focus {
-        outline: none;
-        border-color: #007bff;
-        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-    }
-    
-    .checkbox-field {
-        margin-top: 1rem;
-    }
-    
-    /* Table styling */
-    .table-container {
-        overflow-x: auto;
-        margin-top: 1rem;
-    }
-    
-    .data-table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-    
-    .data-table th {
-        background-color: #f8f9fa;
-        padding: 0.75rem;
-        text-align: left;
-        border-bottom: 2px solid #dee2e6;
-        font-weight: 600;
-    }
-    
-    .data-table td {
-        padding: 0.75rem;
-        border-bottom: 1px solid #dee2e6;
-    }
-    
-    .data-table tr:hover {
-        background-color: #f8f9fa;
-    }
-    
-    .category-badge {
-        background-color: #e9ecef;
-        padding: 0.25rem 0.5rem;
-        border-radius: 3px;
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
-    
-    .type-badge {
-        background-color: #d1ecf1;
-        color: #0c5460;
-        padding: 0.25rem 0.5rem;
-        border-radius: 3px;
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
-    
-    .status-badge {
-        padding: 0.25rem 0.5rem;
-        border-radius: 3px;
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
-    
-    .status-badge.active {
-        background-color: #d4edda;
-        color: #155724;
-    }
-    
-    .status-badge.inactive {
-        background-color: #f8d7da;
-        color: #721c24;
-    }
-    
-    .bool-value.true {
-        color: #28a745;
-        font-weight: 600;
-    }
-    
-    .bool-value.false {
-        color: #dc3545;
-        font-weight: 600;
-    }
-    
-    .num-value {
-        font-family: 'Courier New', monospace;
-        font-weight: 600;
-    }
-    
-    .monospace {
-        font-family: 'Courier New', monospace;
-    }
-    
-    .wrap-cell {
-        max-width: 300px;
-        word-wrap: break-word;
-    }
-</style>
