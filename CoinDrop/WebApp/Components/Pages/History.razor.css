@@ -3,7 +3,11 @@
     background: radial-gradient(1200px 600px at 50% 0%, rgba(0, 120, 60, 0.18), transparent 60%),
     linear-gradient(#050505, #070707);
     color: #d9d9d9;
-    padding-bottom: 40px;
+    
+    padding: 0; /* Wichtig: Kein Padding oben */
+    margin: auto;
+    /* Temporär für Debugging */
+      border: 1px black solid;
 }
 
 .topbar {
