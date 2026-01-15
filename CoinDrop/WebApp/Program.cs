@@ -69,6 +69,11 @@ builder.Services.AddAuthentication()
         // dito
         options.SignInScheme = IdentityConstants.ExternalScheme;
     });
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.LoginPath = "/login";
+    options.AccessDeniedPath = "/login";
+});
 // Repositories
 builder.Services.AddScoped<UserRepo>();
 builder.Services.AddScoped<TransactionRepo>();

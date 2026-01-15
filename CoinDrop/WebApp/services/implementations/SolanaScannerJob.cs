@@ -1,3 +1,4 @@
+using CoinDrop;
 using CoinDrop.config;
 using Domain;
 using Microsoft.EntityFrameworkCore;
@@ -7,43 +8,32 @@ using Solnet.Rpc;
 using Solnet.Rpc.Builders;
 using Solnet.Rpc.Types;
 using Solnet.Wallet;
-using System.Net.Http.Json;
-
-namespace CoinDrop.services;
+using WebApp.services.implementations;
 
 public sealed class SolBalanceScannerJob
 {
-    private readonly IDbContextFactory<CoinDropContext> _dbFactory;
     private readonly IRpcClient _rpc;
     private readonly CryptoConfig _cfg;
-
-    private readonly CDepositRepo _cDepositRepo;
-    private readonly LogRepo _logRepo;
-
+    private readonly IPriceService _priceService;
+    private readonly IRepository<CryptoDeposit> _cDepositRepo;
+    private readonly IRepository<Log> _logRepo;
+    private readonly IRepository<ApplicationUser> _userRepo; // ✅ User Repository hinzufügen
     private const int MaxParallel = 10;
-
-    // Business: "fees treasury zahlt" -> wir bauen TX mit fee payer treasury
     private const ulong FeeReserveLamports = 10_000UL;
-
-    // Sweep-Trigger: wie bei dir (>= 0.01 SOL)
     private const ulong MinTriggerLamports = 10_000_000UL;
 
-    // CoinGecko: Public (ohne API-Key)
-    private static readonly HttpClient _http = new HttpClient
-    {
-        Timeout = TimeSpan.FromSeconds(10)
-    };
-
     public SolBalanceScannerJob(
-        IDbContextFactory<CoinDropContext> dbFactory,
         IOptions<CryptoConfig> cfg,
-        CDepositRepo cDepositRepo,
-        LogRepo logRepo)
+        IPriceService priceService,
+        IRepository<CryptoDeposit> cDepositRepo,
+        IRepository<Log> logRepo,
+        IRepository<ApplicationUser> userRepo) // ✅ User Repo injecten
     {
-        _dbFactory = dbFactory;
         _cfg = cfg.Value;
+        _priceService = priceService;
         _cDepositRepo = cDepositRepo;
         _logRepo = logRepo;
+        _userRepo = userRepo; // ✅ Speichern
 
         _rpc = ClientFactory.GetClient(
             _cfg.Cluster == "MainNet" ? Cluster.MainNet : Cluster.DevNet);
@@ -51,10 +41,8 @@ public sealed class SolBalanceScannerJob
 
     public async Task RunOnceAsync(CancellationToken ct)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-
-        var users = await db.Users
-            .AsNoTracking()
+        // ✅ Nur Repository verwenden, kein DbContext!
+        var users = await _userRepo.Query()
             .Where(u => u.DepositAddress != null && u.DepositAddress != "")
             .Select(u => new { u.Id, DepositAddress = u.DepositAddress! })
             .ToListAsync(ct);
@@ -107,7 +95,6 @@ public sealed class SolBalanceScannerJob
 
         // 4) Duplikate verhindern: TxHash = inbound signature (Deposit Tx)
         bool exists = await _cDepositRepo.Query()
-            .AsNoTracking()
             .AnyAsync(d => d.TxHash == inbound.Value.InboundSignature, ct);
 
         if (exists)
@@ -124,7 +111,7 @@ public sealed class SolBalanceScannerJob
         if (sweep == null)
             return;
 
-        // 6) Deposit Amount berechnen (wie vorher)
+        // 6) Deposit Amount berechnen
         ulong grossLamports = inbound.Value.InboundLamports;
 
         ulong netLamports = grossLamports > FeeReserveLamports
@@ -133,15 +120,21 @@ public sealed class SolBalanceScannerJob
 
         double netSol = netLamports / 1_000_000_000d;
 
-        // ✅ 6.1) CoinGecko Preis (SOL->EUR) holen (ohne API key)
-        double? solPriceEur = await GetSolPriceEurAsync(ct);
+        // ✅ 6.1) PriceService verwenden (mit Cache)
+        double? solPriceEur = await _priceService.GetSolPriceEurAsync(ct);
+        if (solPriceEur == null)
+        {
+            // Fallback: Aus Cache holen
+            solPriceEur = _priceService.GetCachedSolPriceEur();
+            Console.WriteLine($"[PRICE_FALLBACK] Using cached price: {solPriceEur} EUR");
+        }
 
         // ✅ 6.2) EUR Amount berechnen (BalanceCrypto soll EUR sein)
         double eurAmount = (solPriceEur.HasValue && solPriceEur.Value > 0.0)
             ? netSol * solPriceEur.Value
             : 0.0;
 
-        // 7) Persist: CryptoDeposit (TPT -> transaction + crypto_deposit)
+        // 7) Persist: CryptoDeposit
         var deposit = new CryptoDeposit
         {
             UserId = userId,
@@ -168,21 +161,20 @@ public sealed class SolBalanceScannerJob
 
         await _cDepositRepo.AddAsync(deposit, ct);
 
-        // ✅ 7.1) User-Balance updaten (user.balancecrypto += eurAmount)
-        // Extra DbContext, tracked Entity
+        // ✅ 7.1) User-Balance updaten NUR über Repository
         if (eurAmount > 0.0)
         {
-            await using var db2 = await _dbFactory.CreateDbContextAsync(ct);
-            var dbUser = await db2.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+            var dbUser = await _userRepo.Query()
+                .FirstOrDefaultAsync(u => u.Id == userId, ct);
 
             if (dbUser != null)
             {
                 dbUser.BalanceCrypto += eurAmount;
-                await db2.SaveChangesAsync(ct);
+                await _userRepo.UpdateAsync(dbUser, ct);
             }
         }
 
-        // 8) Log
+        // 8) Log mit IRepository<Log>
         var log = new Log
         {
             ActionType = LogActionType.UserAction,
@@ -389,26 +381,5 @@ public sealed class SolBalanceScannerJob
         }
 
         return false;
-    }
-
-    // ✅ CoinGecko Public Price: SOL → EUR (ohne API Key)
-    private static async Task<double?> GetSolPriceEurAsync(CancellationToken ct)
-    {
-        const string url = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=eur";
-
-        using var res = await _http.GetAsync(url, ct);
-        if (!res.IsSuccessStatusCode)
-            return null;
-
-        var json = await res.Content.ReadFromJsonAsync<Dictionary<string, Dictionary<string, double>>>(cancellationToken: ct);
-        if (json == null)
-            return null;
-
-        if (!json.TryGetValue("solana", out var inner))
-            return null;
-
-        return inner.TryGetValue("eur", out var price)
-            ? price
-            : null;
     }
 }

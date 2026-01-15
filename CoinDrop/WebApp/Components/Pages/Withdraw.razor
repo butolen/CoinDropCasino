@@ -1,9 +1,11 @@
 @page "/withdraw-crypto"
 @using CoinDrop
 @using CoinDrop.services.interfaces
+@using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
 @using WebApp.services.implementations
+@attribute [Authorize]
 @inject NavigationManager Nav
 @inject WithdrawlService WithdrawlService
 @inject UserManager<ApplicationUser> UserManager

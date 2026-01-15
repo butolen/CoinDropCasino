@@ -1,37 +1,115 @@
 @page "/deposit-crypto"
+@using System.Security.Claims
 @using CoinDrop
+@using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.JSInterop
+@attribute [Authorize]
 @inject NavigationManager Nav
 @inject UserManager<ApplicationUser> UserManager
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JsRuntime
 @rendermode InteractiveServer
 
 <div class="deposit-page">
     <div class="deposit-card">
-        <div class="deposit-title">Deposit</div>
+        <div class="deposit-title">Deposit Crypto</div>
 
         <div class="deposit-tabs">
             <a class="tab" href="/deposit-phys">Physical</a>
             <a class="tab active" href="/deposit-crypto">Crypto</a>
         </div>
 
-        <label class="deposit-label">Network</label>
-        <select class="deposit-select" @bind="SelectedNetwork">
-            <option value="SOL">SOL</option>
-        </select>
+        <div class="crypto-instructions">
+            <h3 class="instructions-title">How to Deposit Crypto</h3>
+            <div class="instructions-list">
+                <div class="instruction-item">
+                    <span class="instruction-number">1</span>
+                    <span class="instruction-text">Select the correct network below</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="instruction-number">2</span>
+                    <span class="instruction-text">Copy your wallet address</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="instruction-number">3</span>
+                    <span class="instruction-text">Send your crypto from your external wallet</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="instruction-number">4</span>
+                    <span class="instruction-text">Wait for blockchain confirmation (up to 5 minutes)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="network-section">
+            <label class="deposit-label">Select Network</label>
+            <select class="deposit-select" @bind="SelectedNetwork">
+                <option value="SOL">Solana (SOL)</option>
+            </select>
+            <div class="network-hint">
+                <span class="network-icon">🔗</span>
+                <span class="network-text">Only send SOL tokens on the Solana network</span>
+            </div>
+        </div>
 
         @if (ShowWallet)
         {
-            <div class="wallet-box">
-                <div class="wallet-label">Wallet Address</div>
-                <div class="wallet-address">@WalletAddress</div>
+            <div class="wallet-section">
+                <div class="wallet-header">
+                    <h4 class="wallet-title">Send your funds to the address below</h4>
+                    <button class="btn-copy" @onclick="CopyToClipboard" title="Copy to clipboard" disabled="@IsBusy">
+                        📋 Copy
+                    </button>
+                </div>
+                
+                <div class="wallet-box">
+                    <div class="wallet-label">Your Deposit Address</div>
+                    <div class="wallet-address">@WalletAddress</div>
+                </div>
+
+            
+
+               
+            </div>
+        }
+        else
+        {
+            <div class="deposit-prompt">
+                <div class="prompt-icon">💰</div>
+                <div class="prompt-text">
+                    Click "SHOW DEPOSIT ADDRESS" to view your personal deposit address. 
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <div class="deposit-error">
+                <div class="error-icon">❌</div>
+                <div class="error-text">@ErrorMessage</div>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(SuccessMessage))
+        {
+            <div class="deposit-success">
+                <div class="success-icon">✅</div>
+                <div class="success-text">@SuccessMessage</div>
             </div>
         }
 
         <div class="deposit-actions">
-            <button class="btn-primary" @onclick="OnDeposit">DEPOSIT</button>
-            <button class="btn-secondary" @onclick="OnCancel">CANCEL</button>
+            @if (!ShowWallet)
+            {
+                <button class="btn-primary" @onclick="OnDeposit" disabled="@IsBusy">
+                    SHOW DEPOSIT ADDRESS
+                </button>
+            }
+            <button class="btn-secondary" @onclick="OnCancel" disabled="@IsBusy">
+                @(ShowWallet ? "BACK TO DASHBOARD" : "CANCEL")
+            </button>
         </div>
     </div>
 </div>
@@ -39,38 +117,127 @@
 @code {
     private string SelectedNetwork = "SOL";
     private bool ShowWallet = false;
-
-    // Platzhalter: später per Service/DB generieren
-    private string WalletAddress = "9xQeWvG816bUx9EPf6LkQw2HkV4mWqGQ8mJ8W2kZ9kYp";
+    private bool IsBusy = false;
+    private string? ErrorMessage;
+    private string? SuccessMessage;
+    private string WalletAddress = string.Empty;
 
     private async Task OnDeposit()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync()   ;
-        var principal = authState.User;
+        if (IsBusy) return;
+        IsBusy = true;
+        ErrorMessage = null;
+        SuccessMessage = null;
 
-        if (principal.Identity?.IsAuthenticated != true)
+        try
         {
-            // nicht eingeloggt → Login
-            Nav.NavigateTo("/login");
-            return;
-        }
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var principal = authState.User;
 
-        var user = await UserManager.GetUserAsync(principal);
-        if (user == null || string.IsNullOrWhiteSpace(user.DepositAddress))
-        {
-            // sollte eigentlich nie passieren, aber besser als NullReference-Hölle
-            WalletAddress = "No deposit address assigned.";
-        }
-        else
-        {
+            if (principal?.Identity?.IsAuthenticated != true)
+            {
+                Nav.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+
+            var user = await UserManager.GetUserAsync(principal);
+            if (user == null)
+            {
+                ErrorMessage = "User not found. Please try logging in again.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(user.DepositAddress))
+            {
+                ErrorMessage = "Deposit address not assigned. Please contact support.";
+                return;
+            }
+
             WalletAddress = user.DepositAddress;
+            ShowWallet = true;
+            SuccessMessage = "Deposit address loaded successfully! Copy the address carefully.";
         }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error loading deposit address: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
-        ShowWallet = true;
+    private async Task CopyToClipboard()
+    {
+        if (IsBusy || string.IsNullOrWhiteSpace(WalletAddress))
+            return;
+
+        IsBusy = true;
+        try
+        {
+            // Versuche die moderne Clipboard API
+            await JsRuntime.InvokeVoidAsync("navigator.clipboard.writeText", WalletAddress);
+            
+            SuccessMessage = "Address copied to clipboard!";
+            ErrorMessage = null;
+            
+            // Nach 3 Sekunden die Erfolgsmeldung ausblenden
+            _ = Task.Delay(3000).ContinueWith(async _ => 
+            {
+                await InvokeAsync(() => 
+                {
+                    SuccessMessage = null;
+                    StateHasChanged();
+                });
+            });
+        }
+        catch (Exception)
+        {
+            try
+            {
+                // Einfacher Fallback
+                var jsCode = 
+                    "var textArea = document.createElement('textarea');" +
+                    $"textArea.value = '{WalletAddress.Replace("'", "\\'")}';" +
+                    "document.body.appendChild(textArea);" +
+                    "textArea.select();" +
+                    "document.execCommand('copy');" +
+                    "document.body.removeChild(textArea);";
+                
+                await JsRuntime.InvokeVoidAsync("eval", jsCode);
+                
+                SuccessMessage = "Address copied to clipboard!";
+                ErrorMessage = null;
+                
+                _ = Task.Delay(3000).ContinueWith(async _ => 
+                {
+                    await InvokeAsync(() => 
+                    {
+                        SuccessMessage = null;
+                        StateHasChanged();
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                ErrorMessage = $"Could not copy to clipboard: {ex.Message}";
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     private void OnCancel()
     {
-        Nav.NavigateTo("/", forceLoad: true);
+        if (ShowWallet)
+        {
+            Nav.NavigateTo("/", forceLoad: true);
+        }
+        else
+        {
+            Nav.NavigateTo("/");
+        }
     }
 }

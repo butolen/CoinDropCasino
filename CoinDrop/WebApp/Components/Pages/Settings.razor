@@ -2,8 +2,9 @@
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
 @using CoinDrop.services.interfaces
+@using Microsoft.AspNetCore.Authorization
 @rendermode InteractiveServer
-
+@attribute [Authorize]
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IUserService UserService
 @inject NavigationManager Nav
@@ -13,16 +14,16 @@
 
     @if (!_loaded)
     {
-        <div class="muted">Loading...</div>
+        <div class="loading">Loading settings...</div>
     }
     else if (!_isAuth)
     {
-        <div class="muted">Not logged in.</div>
+        <div class="auth-error">Not logged in. Please sign in to access settings.</div>
     }
     else
     {
         <div class="settings-grid">
-            <!-- PROFILE IMAGE -->
+            <!-- PROFILE PICTURE -->
             <div class="card">
                 <div class="card-title">Profile Picture</div>
 
@@ -30,14 +31,25 @@
                     <img class="pfp" src="@(_pfpUrl ?? "/images/default-pfp.png")" alt="Profile picture" />
 
                     <div class="pfp-actions">
-                        <InputFile OnChange="OnPfpSelected" accept="image/png,image/jpeg,image/webp" />
+                        <div class="file-input-wrapper">
+                            <label class="file-label">
+                                <InputFile OnChange="OnPfpSelected" accept="image/png,image/jpeg,image/webp" />
+                                <span class="file-text">Choose Image</span>
+                            </label>
+                        </div>
                         <button class="btn-primary" @onclick="UploadPfp" disabled="@(_pfpFile is null || _busy)">
                             Upload
                         </button>
 
+                        <div class="hint">
+                            Supported formats: JPG, PNG, WebP (max. 2MB)
+                        </div>
+
                         @if (!string.IsNullOrWhiteSpace(_pfpMsg))
                         {
-                            <div class="muted">@_pfpMsg</div>
+                            <div class="message @(_pfpMsg.Contains("successfully") ? "success" : "error")">
+                                @_pfpMsg
+                            </div>
                         }
                     </div>
                 </div>
@@ -45,29 +57,42 @@
 
             <!-- EMAIL -->
             <div class="card">
-                <div class="card-title">Email</div>
+                <div class="card-title">Email Address</div>
 
-                <div class="row">
-                    <div><b>Current:</b> @_email</div>
-                    <div><b>Confirmed:</b> @(_emailConfirmed ? "Yes" : "No")</div>
+                <div class="info-row">
+                    <div class="info-label">Current address:</div>
+                    <div class="info-value">@_email</div>
+                </div>
+
+                <div class="info-row">
+                    <div class="info-label">Confirmed:</div>
+                    <div class="info-value @(_emailConfirmed ? "confirmed" : "unconfirmed")">
+                        @(_emailConfirmed ? "✅ Confirmed" : "❌ Not confirmed")
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="section-title">Change Email Address</div>
+                <div class="hint">
+                    A confirmation email will be sent to the new address.
                 </div>
 
                 <div class="row">
-                    <button class="btn-ghost" @onclick="ResendConfirmEmail" disabled="@(_emailConfirmed || _busy)">
-                        Resend confirmation
-                    </button>
-                </div>
-
-                <div class="row">
-                    <input class="input" placeholder="New email" @bind="_newEmail" />
+                    <input class="input" 
+                           placeholder="Enter new email address" 
+                           @bind="_newEmail"
+                           disabled="@_busy" />
                     <button class="btn-primary" @onclick="RequestEmailChange" disabled="@_busy">
-                        Send confirm link
+                        Send confirmation link
                     </button>
                 </div>
 
                 @if (!string.IsNullOrWhiteSpace(_emailMsg))
                 {
-                    <div class="muted">@_emailMsg</div>
+                    <div class="message @(_emailMsg.Contains("sent") || _emailMsg.Contains("updated") ? "success" : "error")">
+                        @_emailMsg
+                    </div>
                 }
             </div>
 
@@ -75,12 +100,23 @@
             <div class="card">
                 <div class="card-title">Username</div>
 
-                <div class="row">
-                    <div><b>Current:</b> @_userName</div>
+                <div class="info-row">
+                    <div class="info-label">Current username:</div>
+                    <div class="info-value">@_userName</div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="section-title">Change Username</div>
+                <div class="hint">
+                    The new username will take effect immediately.
                 </div>
 
                 <div class="row">
-                    <input class="input" placeholder="New username" @bind="_newUserName" />
+                    <input class="input" 
+                           placeholder="Enter new username" 
+                           @bind="_newUserName"
+                           disabled="@_busy" />
                     <button class="btn-primary" @onclick="ChangeUserName" disabled="@_busy">
                         Change
                     </button>
@@ -88,7 +124,9 @@
 
                 @if (!string.IsNullOrWhiteSpace(_userMsg))
                 {
-                    <div class="muted">@_userMsg</div>
+                    <div class="message @(_userMsg.Contains("updated") ? "success" : "error")">
+                        @_userMsg
+                    </div>
                 }
             </div>
 
@@ -96,15 +134,22 @@
             <div class="card">
                 <div class="card-title">Password</div>
 
+                <div class="section-title">Reset Password</div>
+                <div class="hint">
+                    A password reset link will be sent to your email address.
+                </div>
+
                 <div class="row">
                     <button class="btn-primary" @onclick="SendResetLink" disabled="@_busy">
-                        Send reset link to email
+                        Request reset link
                     </button>
                 </div>
 
                 @if (!string.IsNullOrWhiteSpace(_pwdMsg))
                 {
-                    <div class="muted">@_pwdMsg</div>
+                    <div class="message @(_pwdMsg.Contains("sent") ? "success" : "error")">
+                        @_pwdMsg
+                    </div>
                 }
             </div>
         </div>
@@ -133,10 +178,10 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // optional msg vom redirect (confirm-email-change)
+        // Optional: Message from redirect (confirm-email-change)
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
         var q = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        if (q["msg"] == "email-updated") _emailMsg = "Email updated.";
+        if (q["msg"] == "email-updated") _emailMsg = "Email was successfully updated.";
 
         await LoadMe();
         _loaded = true;
@@ -164,6 +209,7 @@
     {
         _pfpMsg = null;
         _pfpFile = e.File;
+        StateHasChanged();
     }
 
     private async Task UploadPfp()
@@ -171,6 +217,8 @@
         if (_pfpFile is null) return;
 
         _busy = true;
+        _pfpMsg = null;
+        
         try
         {
             var state = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -183,63 +231,69 @@
                 _pfpFile.Size);
 
             _pfpMsg = res.Succeeded
-                ? "Profile image updated."
+                ? "Profile picture was successfully updated."
                 : string.Join(" | ", res.Errors.Select(e => e.Description));
 
             await LoadMe();
         }
-        finally
+        catch (Exception ex)
         {
-            _busy = false;
-        }
-    }
-
-    private async Task ResendConfirmEmail()
-    {
-        _busy = true;
-        try
-        {
-            var state = await AuthStateProvider.GetAuthenticationStateAsync();
-            var res = await UserService.ResendEmailConfirmationAsync(state.User);
-
-            _emailMsg = res.Succeeded
-                ? "Confirmation email sent."
-                : string.Join(" | ", res.Errors.Select(e => e.Description));
+            _pfpMsg = $"Error uploading: {ex.Message}";
         }
         finally
         {
             _busy = false;
+            StateHasChanged();
         }
     }
 
     private async Task RequestEmailChange()
     {
+        if (string.IsNullOrWhiteSpace(_newEmail))
+        {
+            _emailMsg = "Please enter a new email address.";
+            StateHasChanged();
+            return;
+        }
+
         _busy = true;
+        _emailMsg = null;
+        
         try
         {
             var state = await AuthStateProvider.GetAuthenticationStateAsync();
-            var res = await UserService.RequestEmailChangeAsync(state.User, _newEmail ?? "");
+            var res = await UserService.RequestEmailChangeAsync(state.User, _newEmail.Trim());
 
             _emailMsg = res.Succeeded
-                ? "Confirm link sent to new email."
+                ? $"Confirmation link was sent to {_newEmail}."
                 : string.Join(" | ", res.Errors.Select(e => e.Description));
         }
         finally
         {
             _busy = false;
+            StateHasChanged();
         }
     }
 
     private async Task ChangeUserName()
     {
+        if (string.IsNullOrWhiteSpace(_newUserName))
+        {
+            _userMsg = "Please enter a new username.";
+            StateHasChanged();
+            return;
+        }
+
         _busy = true;
+        _userMsg = null;
+        
         try
         {
             var state = await AuthStateProvider.GetAuthenticationStateAsync();
-            var res = await UserService.RequestUserNameChangeAsync(state.User, _newUserName ?? "");
+            var res = await UserService.RequestUserNameChangeAsync(state.User, _newUserName.Trim());
 
             _userMsg = res.Succeeded
-                ? "Username updated."
+                ? "Username was successfully updated."
                 : string.Join(" | ", res.Errors.Select(e => e.Description));
 
             await LoadMe();
@@ -247,24 +301,28 @@
         finally
         {
             _busy = false;
+            StateHasChanged();
         }
     }
 
     private async Task SendResetLink()
     {
         _busy = true;
+        _pwdMsg = null;
+        
         try
         {
             var state = await AuthStateProvider.GetAuthenticationStateAsync();
             var res = await UserService.SendPasswordResetLinkAsync(state.User);
 
             _pwdMsg = res.Succeeded
-                ? "Reset link sent."
+                ? $"A password reset link was sent to {_email}."
                 : string.Join(" | ", res.Errors.Select(e => e.Description));
         }
         finally
         {
             _busy = false;
+            StateHasChanged();
         }
     }
 }
