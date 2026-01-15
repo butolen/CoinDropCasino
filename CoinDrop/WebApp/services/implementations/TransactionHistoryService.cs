@@ -6,18 +6,28 @@ using CoinDrop;
 using CoinDrop.services.interfaces;
 using Domain;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using WebApp.services.dtos;
 
 namespace WebApp.services.implementations;
 
 public sealed class TransactionHistoryService : ITransactionHistoryService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly TransactionRepo _txRepo;
+    private readonly HDepositRepo _hRepo;
+    private readonly CDepositRepo _cRepo;
+    private readonly WithdrawalRepo _wRepo;
 
-    public TransactionHistoryService(IServiceScopeFactory scopeFactory)
+    // ✅ Direkte Injection der benötigten Repositories
+    public TransactionHistoryService(
+        TransactionRepo txRepo,
+        HDepositRepo hRepo,
+        CDepositRepo cRepo,
+        WithdrawalRepo wRepo)
     {
-        _scopeFactory = scopeFactory;
+        _txRepo = txRepo;
+        _hRepo = hRepo;
+        _cRepo = cRepo;
+        _wRepo = wRepo;
     }
 
     public async Task<PagedResultHistory<TransactionHistoryRowDto>> GetForUserAsync(
@@ -25,82 +35,93 @@ public sealed class TransactionHistoryService : ITransactionHistoryService
         TransactionHistoryQuery query,
         CancellationToken ct = default)
     {
-        // ✅ neuer Scope => neue Repo-Instanzen => neuer DbContext => kein Concurrency-Crash
-        using var scope = _scopeFactory.CreateScope();
+        // ✅ Alle Daten asynchron mit ExecuteQueryAsync laden
+        var transactions = await _txRepo.ExecuteQueryAsync(
+            queryBuilder: q => q
+                .AsNoTracking()
+                .Where(t => t.UserId == userId),
+            ct
+        );
 
-        var txRepo = scope.ServiceProvider.GetRequiredService<TransactionRepo>();
-        var hRepo = scope.ServiceProvider.GetRequiredService<HDepositRepo>();
-        var cRepo = scope.ServiceProvider.GetRequiredService<CDepositRepo>();
-        var wRepo = scope.ServiceProvider.GetRequiredService<WithdrawalRepo>();
+        var hardware = await _hRepo.ExecuteQueryAsync(
+            q => q.AsNoTracking(),
+            ct
+        );
 
-        IQueryable<Transaction> baseTx = txRepo.Query()
-            .AsNoTracking()
-            .Where(t => t.UserId == userId);
+        var cryptoDep = await _cRepo.ExecuteQueryAsync(
+            q => q.AsNoTracking(),
+            ct
+        );
+
+        var withdrawals = await _wRepo.ExecuteQueryAsync(
+            q => q.AsNoTracking(),
+            ct
+        );
+
+        // ✅ In-Memory Filter anwenden (da ExecuteQueryAsync Listen zurückgibt)
+        var filteredTransactions = transactions.AsEnumerable();
 
         // Action filter
         if (query.Action == TransactionActionFilter.Deposit)
-            baseTx = baseTx.Where(t => t is HardwareDeposit || t is CryptoDeposit);
+            filteredTransactions = filteredTransactions
+                .Where(t => t is HardwareDeposit || t is CryptoDeposit);
         else if (query.Action == TransactionActionFilter.Withdrawal)
-            baseTx = baseTx.Where(t => t is Withdrawal);
+            filteredTransactions = filteredTransactions
+                .Where(t => t is Withdrawal);
 
         // Type filter
         if (query.Type == TransactionTypeFilter.Physical)
-            baseTx = baseTx.Where(t => t is HardwareDeposit);
+            filteredTransactions = filteredTransactions
+                .Where(t => t is HardwareDeposit);
         else if (query.Type == TransactionTypeFilter.Crypto)
-            baseTx = baseTx.Where(t => t is CryptoDeposit || t is Withdrawal);
+            filteredTransactions = filteredTransactions
+                .Where(t => t is CryptoDeposit || t is Withdrawal);
 
         // Date range (UTC)
         if (query.FromUtc.HasValue)
-            baseTx = baseTx.Where(t => t.Timestamp >= query.FromUtc.Value);
+            filteredTransactions = filteredTransactions
+                .Where(t => t.Timestamp >= query.FromUtc.Value);
 
         if (query.ToUtc.HasValue)
-            baseTx = baseTx.Where(t => t.Timestamp <= query.ToUtc.Value);
+            filteredTransactions = filteredTransactions
+                .Where(t => t.Timestamp <= query.ToUtc.Value);
 
         // ✅ MinDepositEur (nur auf Deposits)
         if (query.MinDepositEur.HasValue)
         {
             var min = query.MinDepositEur.Value;
-            baseTx = baseTx.Where(t =>
-                !(t is HardwareDeposit || t is CryptoDeposit) || t.EurAmount >= min
-            );
+            filteredTransactions = filteredTransactions
+                .Where(t => !(t is HardwareDeposit || t is CryptoDeposit) || t.EurAmount >= min);
         }
 
-        var hardware = hRepo.Query().AsNoTracking();
-        var cryptoDep = cRepo.Query().AsNoTracking();
-        var withdrawal = wRepo.Query().AsNoTracking();
-
-        var projected =
-            from t in baseTx
-            join hd in hardware on t.TransactionId equals hd.TransactionId into hdj
-            from hd in hdj.DefaultIfEmpty()
-
-            join cd in cryptoDep on t.TransactionId equals cd.TransactionId into cdj
-            from cd in cdj.DefaultIfEmpty()
-
-            join wd in withdrawal on t.TransactionId equals wd.TransactionId into wdj
-            from wd in wdj.DefaultIfEmpty()
-
-            select new TransactionHistoryRowDto
+        // ✅ In-Memory Join durchführen
+        var result = filteredTransactions
+            .Select(t =>
             {
-                Action = wd != null ? "Withdrawal" : "Deposit",
-                Type = (hd != null) ? "Physical" : "Crypto",
-                EurAmount = t.EurAmount,
-                AssetType = (hd != null) ? "Cash" : (wd != null ? wd.Asset : (cd != null ? cd.Asset : "")),
-                Network = (hd != null) ? "" : (cd != null ? cd.Network : ""),
-                TimestampUtc = t.Timestamp,
-                TxHash = wd != null ? wd.TxHash : (cd != null ? cd.TxHash : null)
-            };
+                var hd = hardware.FirstOrDefault(h => h.TransactionId == t.TransactionId);
+                var cd = cryptoDep.FirstOrDefault(c => c.TransactionId == t.TransactionId);
+                var wd = withdrawals.FirstOrDefault(w => w.TransactionId == t.TransactionId);
 
-        projected = projected.OrderByDescending(x => x.TimestampUtc);
-
-        var items = await projected.ToArrayAsync(ct);
+                return new TransactionHistoryRowDto
+                {
+                    Action = wd != null ? "Withdrawal" : "Deposit",
+                    Type = hd != null ? "Physical" : "Crypto",
+                    EurAmount = t.EurAmount,
+                    AssetType = hd != null ? "Cash" : (wd != null ? wd.Asset : (cd != null ? cd.Asset : "")),
+                    Network = hd != null ? "" : (cd != null ? cd.Network : ""),
+                    TimestampUtc = t.Timestamp,
+                    TxHash = wd != null ? wd.TxHash : (cd != null ? cd.TxHash : null)
+                };
+            })
+            .OrderByDescending(x => x.TimestampUtc)
+            .ToArray();
 
         return new PagedResultHistory<TransactionHistoryRowDto>
         {
-            Items = items,
-            TotalCount = items.Length,
+            Items = result,
+            TotalCount = result.Length,
             Page = 1,
-            PageSize = items.Length
+            PageSize = result.Length
         };
     }
 }

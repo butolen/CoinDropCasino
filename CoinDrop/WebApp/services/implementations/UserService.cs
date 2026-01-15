@@ -424,13 +424,14 @@ public class UserService : IUserService
 
         var oldUserName = user.UserName;
         var result = await _userManager.SetUserNameAsync(user, newUserName);
-        
+    
         if (result.Succeeded)
         {
-            // Cookie/Claims refreshen (optional aber gut)
-            await _signInManager.RefreshSignInAsync(user);
-
-            // ✅ Logging für Username-Änderung
+            // ❌ Removed RefreshSignInAsync to prevent "Headers are read-only" error
+            // The authentication cookie will be updated with the new username
+            // on the user's next login or when they perform another auth operation
+        
+            // ✅ Logging for username change
             await LogUserActionAsync(
                 user.Id,
                 LogActionType.UserAction,

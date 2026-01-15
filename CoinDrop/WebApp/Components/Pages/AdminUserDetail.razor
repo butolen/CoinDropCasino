@@ -1,10 +1,11 @@
 @page "/admin/users/{UserId}"
 @using System.Security.Claims
 @using CoinDrop.services.interfaces
+@using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using WebApp.services.dtos
 @rendermode InteractiveServer
-
+@attribute [Authorize(Roles = "admin")]
 @inject IAdminUserService AdminUserService
 @inject IGameHistoryService GameHistoryService
 @inject ITransactionHistoryService TransactionHistoryService
@@ -155,19 +156,9 @@
                     </select>
                 </div>
 
-                <div class="field">
-                    <label>From (Local)</label>
-                    <input type="datetime-local"
-                           @bind-value="_gameFromLocal"
-                           @bind-value:format="yyyy-MM-ddTHH:mm" />
-                </div>
+               
 
-                <div class="field">
-                    <label>To (Local)</label>
-                    <input type="datetime-local"
-                           @bind-value="_gameToLocal"
-                           @bind-value:format="yyyy-MM-ddTHH:mm" />
-                </div>
+                
 
                 <div class="field">
                     <label>Min Bet (EUR)</label>
@@ -265,19 +256,9 @@
                     </select>
                 </div>
 
-                <div class="field">
-                    <label>From (Local)</label>
-                    <input type="datetime-local"
-                           @bind-value="_txFromLocal"
-                           @bind-value:format="yyyy-MM-ddTHH:mm" />
-                </div>
+               
 
-                <div class="field">
-                    <label>To (Local)</label>
-                    <input type="datetime-local"
-                           @bind-value="_txToLocal"
-                           @bind-value:format="yyyy-MM-ddTHH:mm" />
-                </div>
+                
 
                 <div class="field">
                     <label>Min Deposit (EUR)</label>

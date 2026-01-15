@@ -1,10 +1,11 @@
 ﻿@page "/history"
 @using System.Security.Claims
 @using CoinDrop.services.interfaces
+@using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using WebApp.services.dtos
 @rendermode InteractiveServer
-
+@attribute [Authorize]
 @inject ITransactionHistoryService HistoryService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav

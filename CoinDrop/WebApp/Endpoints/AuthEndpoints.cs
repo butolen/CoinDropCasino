@@ -113,195 +113,222 @@ public static class AuthEndpoints
 
         // EXTERNAL LOGIN CALLBACK
         app.MapGet("/external-login-callback", async (
-            string? returnUrl,
-            HttpContext ctx,
-            SignInManager<ApplicationUser> signInManager,
-            UserManager<ApplicationUser> userManager,
-            RoleManager<IdentityRole<int>> roleManager,
-            ISolanService solService,
-            IServiceProvider serviceProvider) =>
+    string? returnUrl,
+    HttpContext ctx,
+    SignInManager<ApplicationUser> signInManager,
+    UserManager<ApplicationUser> userManager,
+    RoleManager<IdentityRole<int>> roleManager,
+    ISolanService solService,
+    IServiceProvider serviceProvider) =>
+{
+    returnUrl ??= "/";
+
+    var info = await signInManager.GetExternalLoginInfoAsync();
+    if (info == null)
+    {
+        // ✅ Logging für fehlgeschlagenen External Login
+        await LogUserActionAsync(
+            serviceProvider,
+            null,
+            LogActionType.Error,
+            LogUserType.System,
+            $"External login failed - Could not get external login info");
+        
+        return Results.Redirect("/login?error=externallogininfo");
+    }
+
+    var email = info.Principal.FindFirstValue(ClaimTypes.Email);
+    if (string.IsNullOrWhiteSpace(email))
+    {
+        // ✅ Logging für External Login ohne Email
+        await LogUserActionAsync(
+            serviceProvider,
+            null,
+            LogActionType.Error,
+            LogUserType.System,
+            $"External login failed - No email claim from provider: {info.LoginProvider}");
+        
+        return Results.Redirect("/login?error=noemail");
+    }
+
+    // Existierenden User finden
+    var existingUser = await userManager.FindByEmailAsync(email);
+    
+    // WENN USER EXISTIERT, ABER KEIN EXTERNER LOGIN HINZUGEFÜGT IST
+    if (existingUser != null)
+    {
+        // Prüfen, ob der User bereits einen externen Login für diesen Provider hat
+        var userLogins = await userManager.GetLoginsAsync(existingUser);
+        var hasExternalLoginForProvider = userLogins.Any(l => l.LoginProvider == info.LoginProvider);
+        
+        // Wenn kein externer Login für diesen Provider existiert
+        if (!hasExternalLoginForProvider)
         {
-            returnUrl ??= "/";
-
-            var info = await signInManager.GetExternalLoginInfoAsync();
-            if (info == null)
-            {
-                // ✅ Logging für fehlgeschlagenen External Login
-                await LogUserActionAsync(
-                    serviceProvider,
-                    null,
-                    LogActionType.Error,
-                    LogUserType.System,
-                    $"External login failed - Could not get external login info");
-                
-                return Results.Redirect("/login?error=externallogininfo");
-            }
-
-            var email = info.Principal.FindFirstValue(ClaimTypes.Email);
-            if (string.IsNullOrWhiteSpace(email))
-            {
-                // ✅ Logging für External Login ohne Email
-                await LogUserActionAsync(
-                    serviceProvider,
-                    null,
-                    LogActionType.Error,
-                    LogUserType.System,
-                    $"External login failed - No email claim from provider: {info.LoginProvider}");
-                
-                return Results.Redirect("/login?error=noemail");
-            }
-
-            // Existierenden User finden
-            var existingUser = await userManager.FindByEmailAsync(email);
-            if (existingUser != null)
-            {
-                // Ban-Überprüfung für existierenden User
-                var isLocked = await userManager.IsLockedOutAsync(existingUser);
-                if (isLocked)
-                {
-                    var lockoutEnd = await userManager.GetLockoutEndDateAsync(existingUser);
-                    if (lockoutEnd > DateTimeOffset.UtcNow)
-                    {
-                        // ✅ Logging für gescheiterten External Login wegen Ban
-                        await LogUserActionAsync(
-                            serviceProvider,
-                            existingUser.Id,
-                            LogActionType.Warning,
-                            LogUserType.User,
-                            $"External login blocked - account banned: {existingUser.UserName} (ID: {existingUser.Id}, Provider: {info.LoginProvider})");
-                        
-                        return Results.Redirect("/login?e=banned");
-                    }
-                }
-
-                // Login mit existierendem User
-                var loginResult = await signInManager.ExternalLoginSignInAsync(
-                    info.LoginProvider,
-                    info.ProviderKey,
-                    isPersistent: false,
-                    bypassTwoFactor: true);
-
-                if (loginResult.Succeeded)
-                {
-                    // ✅ Logging für erfolgreichen External Login (existierender User)
-                    await LogUserActionAsync(
-                        serviceProvider,
-                        existingUser.Id,
-                        LogActionType.UserAction,
-                        LogUserType.User,
-                        $"External login successful via {info.LoginProvider}: {existingUser.UserName} (ID: {existingUser.Id}, Email: {existingUser.Email})");
-
-                    // ForceLogout Token setzen
-                    var serverToken = await userManager.GetAuthenticationTokenAsync(
-                        existingUser, "ForceLogout", "Token");
-                    
-                    if (string.IsNullOrEmpty(serverToken))
-                    {
-                        serverToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
-                        await userManager.SetAuthenticationTokenAsync(
-                            existingUser, "ForceLogout", "Token", serverToken);
-                    }
-
-                    ctx.Response.Cookies.Append("ForceLogoutToken", serverToken, new CookieOptions
-                    {
-                        HttpOnly = false,
-                        Secure = true,
-                        SameSite = SameSiteMode.Strict,
-                        Expires = DateTimeOffset.UtcNow.AddDays(30)
-                    });
-                    
-                    return Results.Redirect(returnUrl);
-                }
-                else
-                {
-                    // ✅ Logging für gescheiterten External Login
-                    await LogUserActionAsync(
-                        serviceProvider,
-                        existingUser.Id,
-                        LogActionType.Warning,
-                        LogUserType.User,
-                        $"External login failed via {info.LoginProvider}: {existingUser.UserName} (ID: {existingUser.Id})");
-                }
-            }
-
-            // Neuer User (Google/MS Erstlogin)
-            var name = info.Principal.FindFirstValue(ClaimTypes.Name);
-            var userName = await GenerateUserNameFromEmailAsync(email, userManager);
-
-            var user = new ApplicationUser
-            {
-                UserName = userName,
-                Email = email,
-                EmailConfirmed = true
-            };
-
-            var createResult = await userManager.CreateAsync(user);
-            if (!createResult.Succeeded)
-            {
-                // ✅ Logging für fehlgeschlagene User-Erstellung
-                await LogUserActionAsync(
-                    serviceProvider,
-                    null,
-                    LogActionType.Error,
-                    LogUserType.System,
-                    $"External registration failed - User creation failed for email: {email}, Provider: {info.LoginProvider}, Errors: {string.Join(", ", createResult.Errors.Select(e => e.Description))}");
-                
-                return Results.Redirect("/login?error=createuserfailed");
-            }
-
-            if (string.IsNullOrWhiteSpace(user.DepositAddress))
-            {
-                user.DepositAddress = solService.GetUserDepositAddress(user.Id);
-                await userManager.UpdateAsync(user);
-            }
+            // Checken ob User mit Passwort (klassische Registrierung) existiert
+            var hasPassword = await userManager.HasPasswordAsync(existingUser);
             
-            const string defaultRole = "customer";
-            if (!await roleManager.RoleExistsAsync(defaultRole))
+            if (hasPassword)
             {
-                await roleManager.CreateAsync(new IdentityRole<int>(defaultRole));
-            }
-
-            await userManager.AddToRoleAsync(user, defaultRole);
-
-            var addLoginResult = await userManager.AddLoginAsync(user, info);
-            if (!addLoginResult.Succeeded)
-            {
-                // ✅ Logging für fehlgeschlagenen Login-Add
+                // ✅ Logging für Versuch, externen Login zu bestehendem Passwort-Account hinzuzufügen
                 await LogUserActionAsync(
                     serviceProvider,
-                    user.Id,
-                    LogActionType.Error,
+                    existingUser.Id,
+                    LogActionType.Warning,
                     LogUserType.User,
-                    $"External registration failed - Could not add login for: {user.UserName} (ID: {user.Id}, Provider: {info.LoginProvider})");
+                    $"External login attempt for existing password account - User exists with password: {existingUser.UserName} (ID: {existingUser.Id}, Email: {email}, Provider: {info.LoginProvider})");
                 
-                return Results.Redirect("/login?error=addloginfailed");
+                // Redirect mit spezifischer Fehlermeldung
+                return Results.Redirect($"/login?error=extloginforpasswduser&email={Uri.EscapeDataString(email)}&provider={info.LoginProvider}");
             }
+        }
 
-            await signInManager.SignInAsync(user, isPersistent: false);
+        // Ban-Überprüfung für existierenden User
+        var isLocked = await userManager.IsLockedOutAsync(existingUser);
+        if (isLocked)
+        {
+            var lockoutEnd = await userManager.GetLockoutEndDateAsync(existingUser);
+            if (lockoutEnd > DateTimeOffset.UtcNow)
+            {
+                // ✅ Logging für gescheiterten External Login wegen Ban
+                await LogUserActionAsync(
+                    serviceProvider,
+                    existingUser.Id,
+                    LogActionType.Warning,
+                    LogUserType.User,
+                    $"External login blocked - account banned: {existingUser.UserName} (ID: {existingUser.Id}, Provider: {info.LoginProvider})");
+                
+                return Results.Redirect("/login?e=banned");
+            }
+        }
 
-            // ✅ Logging für neue externe Registrierung
+        // Login mit existierendem User
+        var loginResult = await signInManager.ExternalLoginSignInAsync(
+            info.LoginProvider,
+            info.ProviderKey,
+            isPersistent: false,
+            bypassTwoFactor: true);
+
+        if (loginResult.Succeeded)
+        {
+            // ✅ Logging für erfolgreichen External Login (existierender User)
             await LogUserActionAsync(
                 serviceProvider,
-                user.Id,
+                existingUser.Id,
                 LogActionType.UserAction,
                 LogUserType.User,
-                $"New user registered via {info.LoginProvider}: {user.UserName} (ID: {user.Id}, Email: {user.Email})");
+                $"External login successful via {info.LoginProvider}: {existingUser.UserName} (ID: {existingUser.Id}, Email: {existingUser.Email})");
 
-            // ForceLogout Token für neuen User setzen
-            var newToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
-            await userManager.SetAuthenticationTokenAsync(user, "ForceLogout", "Token", newToken);
+            // ForceLogout Token setzen
+            var serverToken = await userManager.GetAuthenticationTokenAsync(
+                existingUser, "ForceLogout", "Token");
             
-            ctx.Response.Cookies.Append("ForceLogoutToken", newToken, new CookieOptions
+            if (string.IsNullOrEmpty(serverToken))
+            {
+                serverToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
+                await userManager.SetAuthenticationTokenAsync(
+                    existingUser, "ForceLogout", "Token", serverToken);
+            }
+
+            ctx.Response.Cookies.Append("ForceLogoutToken", serverToken, new CookieOptions
             {
                 HttpOnly = false,
                 Secure = true,
                 SameSite = SameSiteMode.Strict,
                 Expires = DateTimeOffset.UtcNow.AddDays(30)
             });
-
+            
             return Results.Redirect(returnUrl);
-        });
+        }
+        else
+        {
+            // ✅ Logging für gescheiterten External Login
+            await LogUserActionAsync(
+                serviceProvider,
+                existingUser.Id,
+                LogActionType.Warning,
+                LogUserType.User,
+                $"External login failed via {info.LoginProvider}: {existingUser.UserName} (ID: {existingUser.Id})");
+        }
+    }
 
+    // NEUER USER (Google/MS Erstlogin)
+    // Wenn wir hier ankommen, existiert der User nicht oder hat keinen Passwort-Login
+    var name = info.Principal.FindFirstValue(ClaimTypes.Name);
+    var userName = await GenerateUserNameFromEmailAsync(email, userManager);
+
+    var user = new ApplicationUser
+    {
+        UserName = userName,
+        Email = email,
+        EmailConfirmed = true
+    };
+
+    var createResult = await userManager.CreateAsync(user);
+    if (!createResult.Succeeded)
+    {
+        // ✅ Logging für fehlgeschlagene User-Erstellung
+        await LogUserActionAsync(
+            serviceProvider,
+            null,
+            LogActionType.Error,
+            LogUserType.System,
+            $"External registration failed - User creation failed for email: {email}, Provider: {info.LoginProvider}, Errors: {string.Join(", ", createResult.Errors.Select(e => e.Description))}");
+        
+        return Results.Redirect("/login?error=createuserfailed");
+    }
+
+    if (string.IsNullOrWhiteSpace(user.DepositAddress))
+    {
+        user.DepositAddress = solService.GetUserDepositAddress(user.Id);
+        await userManager.UpdateAsync(user);
+    }
+    
+    const string defaultRole = "customer";
+    if (!await roleManager.RoleExistsAsync(defaultRole))
+    {
+        await roleManager.CreateAsync(new IdentityRole<int>(defaultRole));
+    }
+
+    await userManager.AddToRoleAsync(user, defaultRole);
+
+    var addLoginResult = await userManager.AddLoginAsync(user, info);
+    if (!addLoginResult.Succeeded)
+    {
+        // ✅ Logging für fehlgeschlagenen Login-Add
+        await LogUserActionAsync(
+            serviceProvider,
+            user.Id,
+            LogActionType.Error,
+            LogUserType.User,
+            $"External registration failed - Could not add login for: {user.UserName} (ID: {user.Id}, Provider: {info.LoginProvider})");
+        
+        return Results.Redirect("/login?error=addloginfailed");
+    }
+
+    await signInManager.SignInAsync(user, isPersistent: false);
+
+    // ✅ Logging für neue externe Registrierung
+    await LogUserActionAsync(
+        serviceProvider,
+        user.Id,
+        LogActionType.UserAction,
+        LogUserType.User,
+        $"New user registered via {info.LoginProvider}: {user.UserName} (ID: {user.Id}, Email: {user.Email})");
+
+    // ForceLogout Token für neuen User setzen
+    var newToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
+    await userManager.SetAuthenticationTokenAsync(user, "ForceLogout", "Token", newToken);
+    
+    ctx.Response.Cookies.Append("ForceLogoutToken", newToken, new CookieOptions
+    {
+        HttpOnly = false,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        Expires = DateTimeOffset.UtcNow.AddDays(30)
+    });
+
+    return Results.Redirect(returnUrl);
+});
         // PASSWORD LOGIN MIT BAN-ÜBERPRÜFUNG UND LOGGING
         app.MapPost("/auth/password-login", async (
             HttpContext ctx,

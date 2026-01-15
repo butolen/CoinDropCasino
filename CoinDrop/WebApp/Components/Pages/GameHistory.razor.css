@@ -4,6 +4,7 @@
     linear-gradient(#050505, #070707);
     color: #d9d9d9;
     padding-bottom: 40px;
+    border: 1px black solid;
 }
 
 .topbar {

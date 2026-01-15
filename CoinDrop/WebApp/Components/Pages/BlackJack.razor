@@ -56,12 +56,16 @@
                 
                 <div class="result-details">
                     <div class="result-detail">
-                        <div class="detail-label">Bet</div>
-                        <div class="detail-value">€ @currentGameBet.ToString("N2")</div>
-                    </div>
-                    <div class="result-detail">
                         <div class="detail-label">New Balance</div>
-                        <div class="detail-value">€ @userBalance.ToString("N2")</div>
+                        <div class="detail-value">
+                            € @(currentGameStatus == "Surrendered" 
+                                  ? (userBalance - (currentGameBet / 2)).ToString("N2")
+                                  : currentGameStatus == "Blackjack"
+                                      ? (userBalance + (currentGameBet * 1.5)).ToString("N2")
+                                      : winAmount > 0
+                                          ? (userBalance + currentGameBet).ToString("N2") 
+                                          : (userBalance - currentGameBet).ToString("N2"))
+                        </div>
                     </div>
                 </div>
                 <button class="result-new-game-btn" @onclick="@(() => NavigationManager.NavigateTo("/blackjack", forceLoad:true))">
@@ -121,7 +125,6 @@
                         <li>• Blackjack (A+10) pays 3:2</li>
                         <li>• Dealer stands on 17</li>
                         <li>• Double Down: Double bet, 1 card</li>
-                        <li>• Split: Same cards = 2 hands</li>
                         <li>• Surrender: 50% back in first round</li>
                     </ul>
                 </div>
@@ -170,7 +173,6 @@
                 <h3 class="area-title">PLAYER</h3>
                 
                 <!-- Main Hand -->
-                <div class="hand-label">MAIN HAND</div>
                 <div class="cards-container">
                     @if (playerCards.Any())
                     {
@@ -197,29 +199,6 @@
                 @if (playerValue > 0)
                 {
                     <div class="hand-score">Value: @playerValue</div>
-                }
-
-                <!-- Split Hand -->
-                @if (splitCards.Any())
-                {
-                    <div class="split-hand-container">
-                        <div class="hand-label">SPLIT HAND</div>
-                        <div class="cards-container">
-                            @foreach (var card in splitCards)
-                            {
-                                <div class="card-wrapper">
-                                    <img src="@card.ImagePath" 
-                                         class="card-img" 
-                                         onerror="this.src='/images/BJCards/card_back.png'" />
-                                    <div class="card-value">@card.Value</div>
-                                </div>
-                            }
-                        </div>
-                        @if (splitValue > 0)
-                        {
-                            <div class="hand-score">Value: @splitValue</div>
-                        }
-                    </div>
                 }
             </div>
         </div>
@@ -274,12 +253,6 @@
                     DOUBLE
                 </button>
 
-                <button class="action-btn split" @onclick="Split"
-                        disabled="@(!canSplit || isProcessingAction || userBalance < currentGameBet)">
-                    <span class="action-btn-icon">✂️</span>
-                    SPLIT
-                </button>
-
                 <button class="action-btn surrender" @onclick="Surrender"
                         disabled="@(playerCards.Count > 2 || isProcessingAction)">
                     <span class="action-btn-icon">🏳️</span>
@@ -289,6 +262,7 @@
         }
     </div>
 </div>
+
 @code {
     // User Data
     private ApplicationUser? currentUser;
@@ -304,13 +278,10 @@
     // Cards Data
     private List<CardResponse> playerCards = new();
     private List<CardResponse> dealerCards = new();
-    private List<CardResponse> splitCards = new();
     private int playerValue = 0;
     private int dealerValue = 0;
-    private int splitValue = 0;
     
     // Game Options
-    private bool canSplit = false;
     private bool canDoubleDown = false;
     
     // Bet Selection
@@ -351,7 +322,6 @@
         await LoadGameState();
     }
     
-    // LÖSUNG 4: Dedizierte Balance-Aktualisierungsfunktion
     private async Task RefreshUserBalance()
     {
         try
@@ -362,7 +332,6 @@
                 if (currentUser != null)
                 {
                     userBalance = currentUser.TotalBalance;
-                    Console.WriteLine($"Balance refreshed: €{userBalance:N2}");
                 }
             }
         }
@@ -390,7 +359,6 @@
                     {
                         userBalance = currentUser.TotalBalance;
                         
-                        // UI sofort aktualisieren
                         await InvokeAsync(StateHasChanged);
                     }
                 }
@@ -429,9 +397,6 @@
                     {
                         await UpdateGameData(gameElement);
                         showResultPopup = false;
-                        
-                        // Balance nach Laden des Spielzustands aktualisieren
-                        await RefreshUserBalance();
                     }
                     else
                     {
@@ -453,6 +418,7 @@
             ClearGameState();
         }
         
+        await RefreshUserBalance();
         await InvokeAsync(StateHasChanged);
     }
     
@@ -493,16 +459,6 @@
                 }
             }
             
-            // Split cards
-            splitCards.Clear();
-            if (root.TryGetProperty("SplitHand", out var splitHandElement))
-            {
-                foreach (var cardElement in splitHandElement.EnumerateArray())
-                {
-                    splitCards.Add(ParseCard(cardElement));
-                }
-            }
-            
             // Values
             if (root.TryGetProperty("PlayerValue", out var playerValueElement))
                 playerValue = playerValueElement.GetInt32();
@@ -510,26 +466,21 @@
             if (root.TryGetProperty("DealerValue", out var dealerValueElement))
                 dealerValue = dealerValueElement.GetInt32();
             
-            if (root.TryGetProperty("SplitValue", out var splitValueElement))
-                splitValue = splitValueElement.GetInt32();
-            
             // Options
-            if (root.TryGetProperty("CanSplit", out var canSplitElement))
-                canSplit = canSplitElement.GetBoolean();
-            
             if (root.TryGetProperty("CanDoubleDown", out var canDoubleDownElement))
                 canDoubleDown = canDoubleDownElement.GetBoolean();
             
             hasActiveGame = currentGameStatus == "Active";
             
-            // Balance SOFORT aktualisieren
+            // 🔴 WICHTIG: Balance vor Popup aktualisieren
             await RefreshUserBalance();
             
             if (currentGameStatus != "Active" && !showResultPopup)
             {
-                // LÖSUNG 1: Bei Spielende Balance explizit neu laden
-                await Task.Delay(200); // Verzögerung für DB-Update
-                await RefreshUserBalance(); // Finale Balance laden
+                // 🔴 Extra Delay für DB-Update
+                await Task.Delay(300);
+                // 🔴 Balance ERNEUT laden für korrekte Anzeige
+                await RefreshUserBalance();
                 
                 resultMessage = GetResultMessage(currentGameStatus);
                 resultClass = GetResultClass(currentGameStatus);
@@ -586,8 +537,6 @@
                 if (response.Success)
                 {
                     await UpdateGameData(response.Data);
-                    
-                    // LÖSUNG 1: Balance nach Start aktualisieren
                     await Task.Delay(200);
                     await RefreshUserBalance();
                 }
@@ -649,21 +598,6 @@
         });
     }
     
-    private async Task Split()
-    {
-        if (userBalance < currentGameBet)
-        {
-            errorMessage = "Insufficient balance for Split";
-            return;
-        }
-        
-        await ExecuteAction("Split", async () =>
-        {
-            var response = await BlackjackService.SplitAsync(int.Parse(currentUserId));
-            await UpdateGameFromResponse(response);
-        });
-    }
-    
     private async Task Surrender()
     {
         await ExecuteAction("Surrender", async () =>
@@ -686,11 +620,9 @@
             
             await action();
             
-            // LÖSUNG 1: Balance SOFORT nach jeder Aktion aktualisieren
             await Task.Delay(100);
             await RefreshUserBalance();
             
-            // UI aktualisieren
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
@@ -706,22 +638,19 @@
         }
     }
     
-    // LÖSUNG 1: Optimierte UpdateGameFromResponse Methode
     private async Task UpdateGameFromResponse(BlackjackGame.GameResponse response)
     {
         if (response.Success && response.Data != null)
         {
             await UpdateGameData(response.Data);
             
-            // Balance nach jedem Spielzug neu laden
             await Task.Delay(100);
             await RefreshUserBalance();
             
-            // Wenn Spiel beendet ist, Balance zusätzlich aktualisieren
             if (currentGameStatus != "Active")
             {
-                await Task.Delay(200);
-                await RefreshUserBalance(); // Nochmal laden für finale Balance
+                await Task.Delay(300);
+                await RefreshUserBalance();
             }
         }
         else
@@ -730,7 +659,6 @@
         }
     }
     
-    // LÖSUNG 2: Verbesserte NewGame Methode
     private async Task NewGame()
     {
         try
@@ -739,17 +667,12 @@
             ClearGameState();
             ClearMessages();
             
-            // Balance SOFORT vor dem Neustart aktualisieren
             await RefreshUserBalance();
-            
-            // Zustand neu laden
             await LoadGameState();
             
-            // LÖSUNG 2: Nochmal Balance aktualisieren (sicherheitshalber)
             await Task.Delay(50);
             await RefreshUserBalance();
             
-            // UI aktualisieren
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
@@ -765,11 +688,8 @@
         currentGameStatus = "";
         playerCards.Clear();
         dealerCards.Clear();
-        splitCards.Clear();
         playerValue = 0;
         dealerValue = 0;
-        splitValue = 0;
-        canSplit = false;
         canDoubleDown = false;
         resultMessage = "";
         resultClass = "";

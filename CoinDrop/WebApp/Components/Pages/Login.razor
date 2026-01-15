@@ -95,6 +95,12 @@
             errorMessage = "Dein Konto wurde gesperrt. Bitte kontaktiere den Support.";
         else if (query["msg"] == "banned")
             errorMessage = "Dein Konto wurde gesperrt. Bitte kontaktiere den Support.";
+        else if (query["error"] == "extloginforpasswduser")
+        {
+            var email = query["email"];
+            var provider = query["provider"];
+            errorMessage = $"Ein Konto mit der E-Mail-Adresse '{email}' existiert bereits. Bitte melde dich mit deinem Passwort an.";
+        }
     }
     
     private async Task OnLoginAsync()

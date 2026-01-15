@@ -49,7 +49,7 @@ public class BlackjackService : IBlackjackService
                 return new BlackjackGame.GameResponse(false, 
                     $"Invalid bet. Allowed: {string.Join(", ", allowedBets)}€");
             
-            // Check user and TOTAL balance
+            // Check user and TOTAL balance (nur prüfen, nicht abziehen!)
             var user = await _userRepo.GetByIdAsync(u => u.Id == userId);
             if (user == null)
                 return new BlackjackGame.GameResponse(false, "User not found");
@@ -68,43 +68,50 @@ public class BlackjackService : IBlackjackService
             // End existing game
             await EndExistingGameAsync(userId);
             
-            // Create new game with real deck
-            var game = new BlackjackGame
-            {
-                UserId = userId,
-                BetAmount = betAmount,
-                Status = GameStatus.Active
-            };
+            _logger.LogInformation($"Starting new game for User {userId}. Bet: {betAmount}€, TotalBalance: {user.TotalBalance}€");
             
-            game.InitializeGame();
-            
-            _logger.LogInformation($"Game created for User {userId}. Bet: {betAmount}€, TotalBalance: {user.TotalBalance}");
-            
-            // Save original balances for logging
-            var cryptoBefore = user.BalanceCrypto;
-            var physicalBefore = user.BalancePhysical;
-            var totalBefore = user.TotalBalance;
-            
-            // Betrag von Crypto zuerst abziehen, dann von Physical
-            DeductBetFromUserBalances(user, betAmount);
-            await _userRepo.UpdateAsync(user);
-            
-            _logger.LogInformation($"Bet deducted - Crypto: {cryptoBefore}€ -> {user.BalanceCrypto}€, Physical: {physicalBefore}€ -> {user.BalancePhysical}€");
-            
-            // Create GameSession for logging
+            // Create GameSession for logging (Bevor Spiel erstellt wird)
             var gameSession = new GameSession
             {
                 UserId = userId,
                 GameType = GameType.Blackjack,
                 BetAmount = betAmount,
-                Result = GameResult.Loss,
+                Result = GameResult.Loss, // Default, wird bei Spielende aktualisiert
                 WinAmount = 0,
-                BalanceBefore = totalBefore,
-                BalanceAfter = user.TotalBalance,
+                BalanceBefore = user.TotalBalance,
+                BalanceAfter = user.TotalBalance, // Wird bei Spielende aktualisiert
                 Timestamp = DateTime.UtcNow
             };
             
             await _gameSessionRepo.AddAsync(gameSession);
+            
+            // WICHTIG: GameSession ID speichern
+            int gameSessionId = gameSession.SessionId;
+            
+            _logger.LogInformation($"Created GameSession with ID: {gameSessionId}");
+            
+            // Create new game with real deck
+            var game = new BlackjackGame
+            {
+                UserId = userId,
+                BetAmount = betAmount,
+                Status = GameStatus.Active,
+                GameSessionId = gameSessionId
+            };
+            
+            // Spiel initialisieren (inkl. Deck und Karten)
+            game.InitializeGame();
+            
+            // SOFORT auf Blackjack prüfen
+            if (game.HasBlackjack(game.PlayerHand))
+            {
+                _logger.LogInformation($"Player has Blackjack! Ending game immediately.");
+                
+                // Blackjack sofort behandeln (kein Einsatz-Abzug!)
+                await HandleGameEndAsync(game, GameStatus.Blackjack);
+                
+                return new BlackjackGame.GameResponse(true, "Blackjack! You win!", game.ToFrontendObject());
+            }
             
             // Save game in cache
             var cacheKey = GetCacheKey(userId);
@@ -116,8 +123,10 @@ public class BlackjackService : IBlackjackService
                 ActionType = LogActionType.UserAction,
                 UserType = LogUserType.User,
                 UserId = userId,
-                Description = $"Blackjack game started. Bet: {betAmount}€, BalanceBefore: {totalBefore}€, BalanceAfter: {user.TotalBalance}€"
+                Description = $"Blackjack game started. Bet: {betAmount}€ reserved, Session: {gameSessionId}"
             });
+            
+            _logger.LogInformation($"Game started successfully. Session: {gameSessionId}, Balance remains: {user.TotalBalance}€");
             
             return new BlackjackGame.GameResponse(true, "Game started", game.ToFrontendObject());
         }
@@ -139,7 +148,7 @@ public class BlackjackService : IBlackjackService
             if (game.Status != GameStatus.Active)
                 return new BlackjackGame.GameResponse(false, "Game is not active");
             
-            // DRAW REAL CARD
+            // ECHTE KARTE ZIEHEN
             game.ActivePlayerHand.Add(game.DrawCard());
             
             // Check for bust
@@ -172,7 +181,17 @@ public class BlackjackService : IBlackjackService
             if (game.Status != GameStatus.Active)
                 return new BlackjackGame.GameResponse(false, "Game is not active");
             
-            // DEALER DRAWS REAL CARDS
+            // Bei Split: Zwischen Händen wechseln
+            if (game.IsSplit && !game.IsSplitActive)
+            {
+                game.IsSplitActive = true;
+                UpdateGameInCache(userId, game);
+                
+                _logger.LogInformation($"Split: Switching to second hand. First hand value: {game.GetHandValue(game.PlayerHand)}");
+                return new BlackjackGame.GameResponse(true, "Now playing second hand", game.ToFrontendObject());
+            }
+            
+            // DEALER ZIEHT ECHTE KARTEN
             game.DealerPlay();
             
             // GEWINNER BESTIMMEN
@@ -204,30 +223,21 @@ public class BlackjackService : IBlackjackService
             if (!game.CanDoubleDown())
                 return new BlackjackGame.GameResponse(false, "Double Down not allowed");
             
-            // Check user and TOTAL balance
+            // Check user and TOTAL balance für zusätzlichen Einsatz
             var user = await _userRepo.GetByIdAsync(u => u.Id == userId);
             if (user == null || user.TotalBalance < game.BetAmount)
                 return new BlackjackGame.GameResponse(false, "Insufficient balance for Double Down");
             
+            // Logge die GameSession ID
+            _logger.LogInformation($"DoubleDown - User {userId}, GameSessionId: {game.GameSessionId}, Current bet: {game.BetAmount}€");
+            
+            // Double the bet (nur im Spiel-Objekt, nicht in Balance!)
             var originalBet = game.BetAmount;
-            
-            _logger.LogInformation($"DoubleDown - User {userId}: Original bet: {originalBet}€, TotalBalance: {user.TotalBalance}€");
-            
-            // Save balances before deduction
-            var cryptoBefore = user.BalanceCrypto;
-            var physicalBefore = user.BalancePhysical;
-            
-            // Zusätzlichen Einsatz abziehen (Crypto zuerst)
-            DeductBetFromUserBalances(user, originalBet);
-            await _userRepo.UpdateAsync(user);
-            
-            // Double the bet
             game.BetAmount *= 2;
             
-            _logger.LogInformation($"DoubleDown - Additional {originalBet}€ deducted. Crypto: {cryptoBefore}€ -> {user.BalanceCrypto}€, Physical: {physicalBefore}€ -> {user.BalancePhysical}€");
-            _logger.LogInformation($"DoubleDown - Total bet now: {game.BetAmount}€");
+            _logger.LogInformation($"DoubleDown - User {userId}: Bet doubled from {originalBet}€ to {game.BetAmount}€");
             
-            // DRAW ONE REAL CARD
+            // EINE ECHTE KARTE ZIEHEN
             game.ActivePlayerHand.Add(game.DrawCard());
             
             // Check for bust
@@ -238,13 +248,13 @@ public class BlackjackService : IBlackjackService
             }
             else
             {
-                // Dealer plays
+                // Dealer zieht Karten
                 game.DealerPlay();
                 game.DetermineWinner();
                 await HandleGameEndAsync(game, game.Status);
             }
             
-            await LogActionAsync(userId, $"Double Down. Total bet: {game.BetAmount}€");
+            await LogActionAsync(userId, $"Double Down. Total bet: {game.BetAmount}€, GameSessionId: {game.GameSessionId}");
             return new BlackjackGame.GameResponse(true, "Double Down executed", game.ToFrontendObject());
         }
         catch (Exception ex)
@@ -268,52 +278,62 @@ public class BlackjackService : IBlackjackService
             if (!game.CanSplit())
                 return new BlackjackGame.GameResponse(false, "Split not allowed");
             
-            // Check user and TOTAL balance
+            // Check user and TOTAL balance für zusätzlichen Einsatz
             var user = await _userRepo.GetByIdAsync(u => u.Id == userId);
             if (user == null || user.TotalBalance < game.BetAmount)
                 return new BlackjackGame.GameResponse(false, "Insufficient balance for Split");
             
             var originalBet = game.BetAmount;
             
-            _logger.LogInformation($"Split - User {userId}: Original bet: {originalBet}€, TotalBalance: {user.TotalBalance}€");
-            
-            // Save balances before deduction
-            var cryptoBefore = user.BalanceCrypto;
-            var physicalBefore = user.BalancePhysical;
-            
-            // Zusätzlichen Einsatz für Split abziehen (Crypto zuerst)
-            DeductBetFromUserBalances(user, originalBet);
-            await _userRepo.UpdateAsync(user);
+            _logger.LogInformation($"Split - User {userId}, GameSessionId: {game.GameSessionId}, Bet will be doubled to {originalBet * 2}€");
             
             // Der Gesamt-Einsatz ist jetzt 2x originalBet
             game.BetAmount = originalBet * 2;
-            
-            _logger.LogInformation($"Split - Additional {originalBet}€ deducted. Crypto: {cryptoBefore}€ -> {user.BalanceCrypto}€, Physical: {physicalBefore}€ -> {user.BalancePhysical}€");
-            _logger.LogInformation($"Split - Total bet now: {game.BetAmount}€ (2x {originalBet}€)");
             
             // EXECUTE SPLIT
             game.SplitHand = new List<Card> { game.PlayerHand[1] };
             game.PlayerHand.RemoveAt(1);
             game.IsSplit = true;
+            game.IsSplitActive = false; // Zuerst erster Hand spielen
             
-            // GIVE ONE REAL CARD TO BOTH HANDS
+            _logger.LogInformation($"Split - Created two hands. First hand: {game.PlayerHand.Count} cards, Second hand: {game.SplitHand.Count} cards");
+            
+            // JEDER HAND EINE ECHTE KARTE GEBEN
             game.PlayerHand.Add(game.DrawCard());
             game.SplitHand.Add(game.DrawCard());
             
-            // Wenn beide Hände Blackjack haben
+            _logger.LogInformation($"Split - After drawing cards. First hand value: {game.GetHandValue(game.PlayerHand)}, Second hand value: {game.GetHandValue(game.SplitHand)}");
+            
+            // Prüfen ob erste Hand Blackjack hat
+            if (game.HasBlackjack(game.PlayerHand))
+            {
+                _logger.LogInformation($"Split - First hand has Blackjack! Value: 21");
+            }
+            
+            // Prüfen ob zweite Hand Blackjack hat
+            if (game.HasBlackjack(game.SplitHand))
+            {
+                _logger.LogInformation($"Split - Second hand has Blackjack! Value: 21");
+            }
+            
+            // Wenn beide Hände Blackjack haben - sofort auswerten
             if (game.HasBlackjack(game.PlayerHand) && game.HasBlackjack(game.SplitHand))
             {
-                // Beide Hände gewinnen 3:2
-                game.Status = GameStatus.PlayerWon;
-                // Jede Hand gewinnt originalBet * 2.5, also insgesamt originalBet * 5
-                game.WinAmount = originalBet * 5;
+                _logger.LogInformation($"Split - BOTH HANDS HAVE BLACKJACK! Ending game immediately.");
                 await HandleGameEndAsync(game, GameStatus.PlayerWon);
                 return new BlackjackGame.GameResponse(true, "Double Blackjack! You win!", game.ToFrontendObject());
             }
             
+            // Wenn eine Hand Blackjack hat und die andere nicht, weiterspielen
+            if (game.HasBlackjack(game.PlayerHand))
+            {
+                _logger.LogInformation($"Split - First hand has Blackjack, playing second hand");
+                game.IsSplitActive = true; // Direkt zur zweiten Hand wechseln
+            }
+            
             UpdateGameInCache(userId, game);
             
-            await LogActionAsync(userId, $"Split. Total bet: {game.BetAmount}€ (2x {originalBet}€)");
+            await LogActionAsync(userId, $"Split. Total bet: {game.BetAmount}€ (2x {originalBet}€), GameSessionId: {game.GameSessionId}");
             return new BlackjackGame.GameResponse(true, "Split executed", game.ToFrontendObject());
         }
         catch (Exception ex)
@@ -338,13 +358,12 @@ public class BlackjackService : IBlackjackService
             if (game.PlayerHand.Count > 2)
                 return new BlackjackGame.GameResponse(false, "Surrender only allowed in first round");
             
-            // 50% des Einsatzes zurückgeben
-            var surrenderAmount = game.BetAmount * 0.5;
-            await HandleGameEndAsync(game, GameStatus.Surrendered, surrenderAmount);
+            // Spiel mit 50% Verlust beenden
+            await HandleGameEndAsync(game, GameStatus.Surrendered);
             
-            await LogActionAsync(userId, $"Surrender. Refund: {surrenderAmount}€");
+            await LogActionAsync(userId, $"Surrender. 50% of bet lost.");
             return new BlackjackGame.GameResponse(true, 
-                $"Game surrendered. {surrenderAmount}€ refunded.", game.ToFrontendObject());
+                $"Game surrendered. 50% of bet lost.", game.ToFrontendObject());
         }
         catch (Exception ex)
         {
@@ -415,7 +434,7 @@ public class BlackjackService : IBlackjackService
                 BlackjackPayout = "3:2",
                 DoubleDownAllowed = "After first 2 cards",
                 SplitAllowed = "With same value cards",
-                SurrenderAllowed = "In first round (50% back)",
+                SurrenderAllowed = "In first round (50% loss)",
                 DecksUsed = decksUsed,
                 MinBet = await GetDoubleSettingAsync("blackjack_min_bet", 1),
                 MaxBet = await GetDoubleSettingAsync("blackjack_max_bet", 100),
@@ -479,6 +498,7 @@ public class BlackjackService : IBlackjackService
         game.Status = status;
         game.EndedAt = DateTime.UtcNow;
         
+        // Berechne den Gewinn basierend auf Spielstatus und Einsatz
         double winAmount = CalculateWinAmount(game, status, customWinAmount);
         game.WinAmount = winAmount;
         
@@ -487,76 +507,140 @@ public class BlackjackService : IBlackjackService
         {
             var balanceBefore = user.TotalBalance;
             
-            _logger.LogInformation($"Game end for User {game.UserId}. Status: {status}, TotalBet: {game.BetAmount}€, Win: {winAmount}€, BalanceBefore: {balanceBefore}€");
+            _logger.LogInformation($"Game end for User {game.UserId}. Status: {status}, TotalBet: {game.BetAmount}€, CalculatedWin: {winAmount}€, BalanceBefore: {balanceBefore}€, GameSessionId: {game.GameSessionId}");
             
-            if (winAmount > 0)
+            // JETZT die finale Balance-Berechnung basierend auf Spielausgang
+            double netAmount = 0;
+            
+            switch (status)
             {
-                // Gewinn zu Balances hinzufügen (50/50)
-                AddWinToUserBalances(user, winAmount);
+                case GameStatus.Blackjack:
+                    // Bei Blackjack: Nur Gewinn hinzufügen (Einsatz wurde nie abgezogen)
+                    AddWinToUserBalances(user, winAmount);
+                    netAmount = winAmount;
+                    _logger.LogInformation($"Blackjack! Added {winAmount}€ win (no bet deducted).");
+                    break;
+                    
+                case GameStatus.PlayerWon:
+                case GameStatus.DealerBusted:
+                    // Bei normalem Gewinn: Nettogewinn hinzufügen
+                    AddWinToUserBalances(user, winAmount);
+                    netAmount = winAmount;
+                    _logger.LogInformation($"Regular win. Added {winAmount}€ win.");
+                    break;
+                    
+                case GameStatus.Draw:
+                    // Bei Unentschieden: Nichts tun (Einsatz bleibt)
+                    netAmount = 0;
+                    _logger.LogInformation($"Draw. No balance change (bet remains).");
+                    break;
+                    
+                case GameStatus.Surrendered:
+                    // Bei Surrender: Nur die Hälfte des Einsatzes abziehen
+                    var surrenderLoss = game.BetAmount * 0.5;
+                    DeductBetFromUserBalances(user, surrenderLoss);
+                    netAmount = -surrenderLoss;
+                    _logger.LogInformation($"Surrender. Deducted {surrenderLoss}€ (50% of bet).");
+                    break;
+                    
+                case GameStatus.PlayerBusted:
+                case GameStatus.DealerWon:
+                    // Bei Verlust: Den vollen Einsatz abziehen
+                    DeductBetFromUserBalances(user, game.BetAmount);
+                    netAmount = -game.BetAmount;
+                    _logger.LogInformation($"Loss. Deducted full bet: {game.BetAmount}€");
+                    break;
             }
             
             var balanceAfter = user.TotalBalance;
             
             _logger.LogInformation($"After settlement - BalanceAfter: {balanceAfter}€, Crypto: {user.BalanceCrypto}€, Physical: {user.BalancePhysical}€");
             
-            // GameSession updaten
-            var gameSession = await GetLatestGameSession(game.UserId);
-            
-            if (gameSession != null)
+            // GameSession updaten mit der gespeicherten ID
+            if (game.GameSessionId > 0)
             {
-                gameSession.Result = GetGameResult(status);
-                gameSession.WinAmount = winAmount;
-                gameSession.BalanceAfter = balanceAfter;
-                await _gameSessionRepo.UpdateAsync(gameSession);
+                var gameSession = await GetGameSessionById(game.GameSessionId);
                 
-                _logger.LogInformation($"Updated GameSession: BalanceBefore: {gameSession.BalanceBefore}€, BalanceAfter: {gameSession.BalanceAfter}€, WinAmount: {gameSession.WinAmount}€");
+                if (gameSession != null)
+                {
+                    gameSession.Result = GetGameResult(status);
+                    gameSession.WinAmount = Math.Max(0, netAmount); // Nur positive Werte als WinAmount
+                    gameSession.BalanceAfter = balanceAfter;
+                    await _gameSessionRepo.UpdateAsync(gameSession);
+                    
+                    _logger.LogInformation($"Updated GameSession {gameSession.SessionId}: BalanceBefore: {gameSession.BalanceBefore}€, BalanceAfter: {gameSession.BalanceAfter}€, NetChange: {netAmount}€");
+                }
+                else
+                {
+                    _logger.LogWarning($"GameSession {game.GameSessionId} not found for update!");
+                }
+            }
+            else
+            {
+                _logger.LogError($"No GameSessionId found in game object!");
             }
             
             // User aktualisieren
             await _userRepo.UpdateAsync(user);
+        }
+        else
+        {
+            _logger.LogError($"User {game.UserId} not found for game end settlement!");
         }
         
         // Cache entfernen
         _cache.Remove(GetCacheKey(game.UserId));
         
         await LogActionAsync(game.UserId, 
-            $"Game ended. Status: {status}, Bet: {game.BetAmount}€, Win: {winAmount}€");
+            $"Game ended. Status: {status}, Bet: {game.BetAmount}€, WinAmount: {winAmount}€");
     }
     
     private double CalculateWinAmount(BlackjackGame game, GameStatus status, double? customWinAmount)
     {
-        // Für Split: game.BetAmount ist der GESAMT-Einsatz (2x originalBet)
-        // Wir müssen den Gewinn basierend auf dem ORIGINAL Einsatz pro Hand berechnen
+        // Berechnet den GEWINN (ohne Berücksichtigung des ursprünglichen Einsatzes)
+        // Bei Split: Jede Hand wird separat behandelt
+        double winAmount = 0;
         
-        double originalBetPerHand;
         if (game.IsSplit)
         {
-            // Bei Split ist game.BetAmount = 2x originalBet
-            originalBetPerHand = game.BetAmount / 2;
+            // Bei Split: Jede Hand hat originalBet (BetAmount ist 2x originalBet)
+            double originalBetPerHand = game.BetAmount / 2;
+            
+            switch (status)
+            {
+                case GameStatus.Blackjack:
+                    winAmount = originalBetPerHand * 1.5 * 2; // Beide Hände Blackjack
+                    break;
+                case GameStatus.PlayerWon:
+                case GameStatus.DealerBusted:
+                    winAmount = originalBetPerHand * 2; // Beide Hände gewinnen
+                    break;
+                case GameStatus.Draw:
+                    winAmount = 0; // Beide Hände Unentschieden
+                    break;
+                case GameStatus.Surrendered:
+                    winAmount = originalBetPerHand * 0.5 * 2; // Beide Hände 50% Verlust
+                    break;
+                default:
+                    winAmount = 0; // Verlust
+                    break;
+            }
         }
         else
         {
-            originalBetPerHand = game.BetAmount;
+            // Normales Spiel (kein Split)
+            winAmount = status switch
+            {
+                GameStatus.Blackjack => game.BetAmount * 1.5,          // 3:2 payout
+                GameStatus.PlayerWon => game.BetAmount,                // 1:1 payout
+                GameStatus.DealerBusted => game.BetAmount,             // 1:1 payout
+                GameStatus.Draw => 0,                                  // Kein Gewinn
+                GameStatus.Surrendered => customWinAmount ?? game.BetAmount * 0.5, // 50% Verlust
+                _ => 0                                                 // Kein Gewinn bei Verlust
+            };
         }
         
-        double winAmount = status switch
-        {
-            GameStatus.Blackjack => originalBetPerHand * 2.5,          // 3:2 payout pro Hand
-            GameStatus.PlayerWon => originalBetPerHand * 2,            // 1:1 payout pro Hand
-            GameStatus.DealerBusted => originalBetPerHand * 2,         // 1:1 payout pro Hand
-            GameStatus.Draw => originalBetPerHand,                     // Bet returned pro Hand
-            GameStatus.Surrendered => customWinAmount ?? originalBetPerHand * 0.5, // 50% back pro Hand
-            _ => 0                                                     // Lost
-        };
-        
-        // Bei Split: Multipliziere mit Anzahl der Hände
-        if (game.IsSplit && winAmount > 0)
-        {
-            winAmount *= 2; // Zwei Hände
-        }
-        
-        _logger.LogInformation($"CalculateWinAmount - Status: {status}, IsSplit: {game.IsSplit}, OriginalBetPerHand: {originalBetPerHand}€, TotalWin: {winAmount}€");
-        
+        _logger.LogInformation($"CalculateWinAmount - Status: {status}, Bet: {game.BetAmount}€, IsSplit: {game.IsSplit}, Win: {winAmount}€");
         return winAmount;
     }
     
@@ -620,6 +704,19 @@ public class BlackjackService : IBlackjackService
         };
     }
     
+    private async Task<GameSession?> GetGameSessionById(int id)
+    {
+        try
+        {
+            return await _gameSessionRepo.GetByIdAsync(gs => gs.SessionId == id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error getting game session by ID {id}");
+            return null;
+        }
+    }
+    
     private async Task<GameSession?> GetLatestGameSession(int userId)
     {
         try
@@ -654,6 +751,8 @@ public class BlackjackService : IBlackjackService
         var existingGame = await GetGameFromCacheAsync(userId);
         if (existingGame != null && existingGame.Status == GameStatus.Active)
         {
+            // Setze Spiel als verloren
+            existingGame.Status = GameStatus.DealerWon;
             await HandleGameEndAsync(existingGame, GameStatus.DealerWon);
         }
     }
