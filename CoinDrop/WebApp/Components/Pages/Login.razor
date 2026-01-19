@@ -33,7 +33,7 @@
 
             <div class="auth-form">
                 <div class="auth-field">
-                    <label class="auth-label">Username oder Email</label>
+                    <label class="auth-label">Username or Email</label>
                     <InputText class="auth-input"
                                @bind-Value="loginModel.UserNameOrEmail" />
                 </div>
@@ -57,11 +57,11 @@
                 </div>
 
                 <div class="auth-forgot-password">
-                    <a href="/forgot-passwd">Passwort vergessen?</a>
+                    <a href="/forgot-passwd">Forgot Password?</a>
                 </div>
 
                 <div class="auth-social">
-                    <p class="auth-social-text">oder anmelden mit</p>
+                    <p class="auth-social-text">or Login with</p>
                     <div class="auth-social-buttons">
                         <button type="button"
                                 class="btn-gold-outline"
@@ -90,16 +90,16 @@
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
 
         if (query["e"] == "1")
-            errorMessage = "Benutzername/E-Mail oder Passwort ist ungültig.";
+            errorMessage = "Username/email or password is invalid.";
         else if (query["e"] == "banned")
-            errorMessage = "Dein Konto wurde gesperrt. Bitte kontaktiere den Support.";
+            errorMessage = "Your account has been blocked. Please contact support.";
         else if (query["msg"] == "banned")
-            errorMessage = "Dein Konto wurde gesperrt. Bitte kontaktiere den Support.";
+            errorMessage = "Your account has been blocked. Please contact support.";
         else if (query["error"] == "extloginforpasswduser")
         {
             var email = query["email"];
             var provider = query["provider"];
-            errorMessage = $"Ein Konto mit der E-Mail-Adresse '{email}' existiert bereits. Bitte melde dich mit deinem Passwort an.";
+            errorMessage = $"An account with the email address '{email}' already exists. Please log in with your password.";
         }
     }
     
@@ -116,7 +116,7 @@
 
         if (user == null)
         {
-            errorMessage = "Benutzername/E-Mail oder Passwort ist ungültig.";
+            errorMessage = "Username/email or password is invalid.";
             return;
         }
 
@@ -131,7 +131,7 @@
                 DateTimeOffset end = lockoutEnd.Value;
 
                 // User ist gesperrt
-                errorMessage = "🚫 Dein Konto wurde gesperrt.";
+                errorMessage = "🚫 Your account has been blocked.";
 
                 if (end < DateTimeOffset.MaxValue)
                 {
@@ -139,19 +139,19 @@
 
                     if (timeLeft < TimeSpan.FromDays(1))
                     {
-                        errorMessage += $" Sperre läuft ab in {timeLeft:hh\\:mm\\:ss} Stunden.";
+                        errorMessage += $" Ban expires in {timeLeft:hh\\:mm\\:ss} hours.";
                     }
                     else
                     {
-                        errorMessage += $" Sperre läuft ab am {end:dd.MM.yyyy HH:mm}.";
+                        errorMessage += $" Ban ends on {end:dd.MM.yyyy HH:mm}.";
                     }
                 }
             
                 else
                 {
-                    errorMessage += " Die Sperre ist permanent.";
+                    errorMessage += " The ban is permanent.";
                 }
-                errorMessage += " Bitte kontaktiere den Support unter support@coindrop.com.";
+                errorMessage += " Please contact support at support@coindrop.com.";
                 return;
             }
         }
@@ -161,7 +161,7 @@
 
         if (!result.Succeeded)
         {
-            errorMessage = "Benutzername/E-Mail oder Passwort ist ungültig.";
+            errorMessage = "Username/email or password is invalid.";
             return;
         }
 

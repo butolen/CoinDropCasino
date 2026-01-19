@@ -144,7 +144,6 @@
                                 €@chip.Text
                             </button>
                         }
-
                     </div>
                 </div>
 
@@ -182,10 +181,9 @@
                         0
                     </button>
                 </div>
+                
                 <!-- Roulette Table -->
                 <div class="roulette-table">
-
-
                     <!-- "2 to 1" Spalten (links neben der Tabelle) -->
                     <div class="columns-section">
                         @foreach (var betType in betTypes.Where(b => b.Key == IRouletteService.BetType.Column1 ||
@@ -280,7 +278,6 @@
                     </button>
                 </div>
             </div>
-</div>
         </div>
 
         <!-- Recent Games Footer -->
@@ -309,9 +306,8 @@
                 }
             </div>
         </div>
-
     </div>
-
+</div>
 
 @code {
     // User Data
@@ -350,16 +346,14 @@
     // Spin Animation
     private bool showSpinAnimation = false;
     private bool isCalculating = false;
-    private string countdownText = "5";
+    private string countdownText = "3";
     private System.Timers.Timer? countdownTimer;
-    private System.Timers.Timer? spinTimer;
     
     // Chips
     private readonly List<(string Text, double Value)> chips = new()
     {
         ("1", 1), ("5", 5), ("10", 10), ("50", 50), ("100", 100)
     };
-
 
     protected override async Task OnInitializedAsync()
     {
@@ -392,17 +386,12 @@
         {
             countdownTimer = new System.Timers.Timer(1000);
             countdownTimer.Elapsed += async (sender, e) => await UpdateCountdown();
-            
-            spinTimer = new System.Timers.Timer(5000);
-            spinTimer.Elapsed += async (sender, e) => await FinishSpin();
-            spinTimer.AutoReset = false;
         }
     }
 
     public void Dispose()
     {
         countdownTimer?.Dispose();
-        spinTimer?.Dispose();
     }
 
     private async Task UpdateCountdown()
@@ -410,6 +399,25 @@
         if (int.TryParse(countdownText, out int seconds) && seconds > 1)
         {
             countdownText = (seconds - 1).ToString();
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (seconds == 1)
+        {
+            countdownTimer?.Stop();
+            countdownText = "SPINNING!";
+            isCalculating = true;
+            await InvokeAsync(StateHasChanged);
+            
+            // Warte auf die Animation
+            await Task.Delay(5000);
+            
+            // Führe den Spin aus
+            await ExecuteSpin();
+            
+            // Beende die Animation
+            await Task.Delay(1000);
+            showSpinAnimation = false;
+            isCalculating = false;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -422,41 +430,12 @@
         showSpinAnimation = true;
         showResult = false;
         isCalculating = false;
-        countdownText = "5";
+        countdownText = "3";
+        errorMessage = string.Empty;
         
         countdownTimer?.Start();
-        spinTimer?.Start();
         
         await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task FinishSpin()
-    {
-        try
-        {
-            countdownTimer?.Stop();
-            
-            isCalculating = true;
-            countdownText = "Calculating...";
-            await InvokeAsync(StateHasChanged);
-            
-            await Task.Delay(1000);
-            await ExecuteSpin();
-            await Task.Delay(2000);
-            
-            showSpinAnimation = false;
-            isCalculating = false;
-            
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error finishing spin animation");
-            showSpinAnimation = false;
-            isCalculating = false;
-            errorMessage = "An error occurred during the spin";
-            await InvokeAsync(StateHasChanged);
-        }
     }
 
     private async Task ExecuteSpin()
@@ -513,28 +492,6 @@
             Logger.LogError(ex, "Error executing spin");
             errorMessage = "An error occurred while processing your bet";
         }
-    }
-    private async Task PlaceAllInBet()
-    {
-        // Hole die gesamte Balance des Spielers
-        double allInAmount = userBalance;
-
-        // Erstelle eine Wette mit der gesamten Balance
-        var bet = new IRouletteService.RouletteBet
-        {
-            Type = IRouletteService.BetType.StraightUp,  // Du kannst hier den gewünschten Wett-Typ anpassen
-            Amount = allInAmount
-        };
-
-        // Füge die "ALL-IN" Wette hinzu
-        currentBets.Clear();  // Lösche alle aktuellen Wetten
-        currentBets.Add(bet);  // Setze die neue Wette mit dem gesamten Betrag
-
-        // Leere alle Fehlernachrichten
-        errorMessage = string.Empty;
-
-        // Führe den Spin aus
-        await StartSpinAnimation();
     }
 
     private void UpdateLastNumbers(int newNumber)
@@ -654,17 +611,14 @@
 
     private bool CanSpin()
     {
-        if (!isActive || !currentBets.Any() || currentBets.Sum(b=>b.Amount)>userBalance)
+        if (!isActive || !currentBets.Any())
             return false;
 
         double totalAmount = currentBets.Sum(b => b.Amount);
-        return totalAmount >= minBet && totalAmount <= maxBet;
+        return totalAmount >= minBet && 
+               totalAmount <= maxBet && 
+               totalAmount <= userBalance;
     }
-    private bool CanPlaceAllIn()
-    {
-        return userBalance > 0;  // Der Button ist nur aktiv, wenn der Spieler ein Guthaben hat
-    }
-
 
     private string GetBetTypeDisplay(IRouletteService.BetType betType)
     {
@@ -676,8 +630,12 @@
         return betType switch
         {
             IRouletteService.BetType.StraightUp => "35",
-            IRouletteService.BetType.Dozen1 or IRouletteService.BetType.Dozen2 or IRouletteService.BetType.Dozen3 => "2",
-            IRouletteService.BetType.Column1 or IRouletteService.BetType.Column2 or IRouletteService.BetType.Column3 => "2",
+            IRouletteService.BetType.Dozen1 or 
+            IRouletteService.BetType.Dozen2 or 
+            IRouletteService.BetType.Dozen3 => "2",
+            IRouletteService.BetType.Column1 or 
+            IRouletteService.BetType.Column2 or 
+            IRouletteService.BetType.Column3 => "2",
             _ => "1"
         };
     }

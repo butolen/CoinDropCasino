@@ -24,61 +24,61 @@
 
     <div class="cards">
         <div class="card card-green">
-            <div class="card-label">Casino Guthaben (ALL TIME) (Gewinne - Verluste)</div>
+            <div class="card-label">Casino balance (ALL TIME) (winnings - losses)</div>
             <div class="card-value">@Money(Stats.CasinoNetFromGames)</div>
-            <div class="card-sub">Gesamte Zeit</div>
+            <div class="card-sub">Total time</div>
         </div>
 
         <div class="card card-orange">
             <div class="card-label">Win/Lose (@RangeLabel)</div>
             <div class="card-value @WinLoseClass">@Money(Stats.WinOrLose)</div>
-            <div class="card-sub">Gewinne - Verluste (Casino Sicht) im Zeitraum</div>
+            <div class="card-sub">Winnings - Losses (casino perspective) in the period</div>
         </div>
 
         <div class="card card-orange">
-            <div class="card-label">Games (aus Sicht Casino) (@RangeLabel)</div>
+            <div class="card-label">Games (from a casino perspective) (@RangeLabel)</div>
             <div class="card-row">
-                <div class="pill pill-green">Gewonnen: <b>@Stats.CasinoGamesWon</b></div>
-                <div class="pill pill-red">Verloren: <b>@Stats.CasinoGamesLost</b></div>
+                <div class="pill pill-green">Won: <b>@Stats.CasinoGamesWon</b></div>
+                <div class="pill pill-red">Lost: <b>@Stats.CasinoGamesLost</b></div>
                 <div class="pill pill-orange">Draw: <b>@Stats.GamesDraw</b></div>
             </div>
-            <div class="card-sub">Zeitraum: @RangeLabel</div>
+            <div class="card-sub">Period: @RangeLabel</div>
         </div>
 
         <div class="card card-red">
-            <div class="card-label">Ein-/Auszahlungen (@RangeLabel)</div>
+            <div class="card-label">Deposits/Withdrawals (@RangeLabel)</div>
             <div class="card-grid">
                 <div class="kv">
-                    <span>Alle Einzahlungen - alle Auszahlungen</span>
+                    <span>All deposits - all withdrawals</span>
                     <b>@Money(Stats.DepositsMinusWithdrawals)</b>
                 </div>
                 <div class="kv">
-                    <span>Summe Auszahlungen</span>
+                    <span>Total payouts</span>
                     <b>@Money(Stats.WithdrawalsSum)</b>
                 </div>
                 <div class="kv">
-                    <span>Summe Crypto Einzahlungen</span>
+                    <span>Total Crypto deposits</span>
                     <b>@Money(Stats.CryptoDepositsSum)</b>
                 </div>
                 <div class="kv">
-                    <span>Summe Hardware Einzahlungen</span>
+                    <span>Total hardware deposits</span>
                     <b>@Money(Stats.HardwareDepositsSum)</b>
                 </div>
             </div>
-            <div class="card-sub">Zeitraum: @RangeLabel</div>
+            <div class="card-sub">Period: @RangeLabel</div>
         </div>
 
         <div class="card card-orange">
-            <div class="card-label">Höchster Einsatz (@RangeLabel)</div>
+            <div class="card-label">Highest commitment (@RangeLabel)</div>
             <div class="card-value">@Money(Stats.HighestBet)</div>
-            <div class="card-sub">Zeitraum: @RangeLabel</div>
+            <div class="card-sub">Period: @RangeLabel</div>
         </div>
 
         <div class="card card-green">
-            <div class="card-label">Gesamtsumme (@RangeLabel)</div>
+            <div class="card-label">Total (@RangeLabel)</div>
             <div class="card-value">@Money(Stats.RangeTotalFormula)</div>
             <div class="card-sub">
-                (Alle Einzahlungen + alle Gewinne - alle Auszahlungen + alle Verluste)
+                (All deposits + all winnings - all withdrawals + all losses)
             </div>
         </div>
     </div>
@@ -86,16 +86,16 @@
     <div class="logs">
         <div class="logs-header">
             <div class="logs-title">Logs</div>
-            <div class="logs-sub">Sortiert nach Datum (neu → alt)</div>
+            <div class="logs-sub">Sorted by date (new → old)</div>
         </div>
 
         @if (IsLoading && LogItems.Count == 0)
         {
-            <div class="logs-loading">Lade…</div>
+            <div class="logs-loading">Loading...</div>
         }
         else if (LogItems.Count == 0)
         {
-            <div class="logs-empty">Keine Logs im Zeitraum.</div>
+            <div class="logs-empty">No logs in the period.</div>
         }
         else
         {
@@ -121,7 +121,7 @@
 
             <div class="logs-actions">
                 <button class="more-btn" disabled="@(!HasMore || IsLoading)" @onclick="LoadMoreAsync">
-                    @(IsLoading ? "Lade..." : (HasMore ? "Mehr anzeigen" : "Keine weiteren Logs"))
+                    @(IsLoading ? "Loading..." : (HasMore ? "Show more" : "No more Logs"))
                 </button>
             </div>
         }
@@ -145,10 +145,10 @@
 
     private string RangeLabel => Range switch
     {
-        TimeRange.Today => "Heute",
-        TimeRange.LastWeek => "Letzte Woche",
-        TimeRange.LastMonth => "Letztes Monat",
-        TimeRange.LastYear => "Letztes Jahr",
+        TimeRange.Today => "Today",
+        TimeRange.LastWeek => "Past Week",
+        TimeRange.LastMonth => "Past Month",
+        TimeRange.LastYear => "Past Year",
         _ => "—"
     };
 
