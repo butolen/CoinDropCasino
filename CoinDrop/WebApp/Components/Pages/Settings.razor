@@ -218,7 +218,7 @@
 
         _busy = true;
         _pfpMsg = null;
-        
+    
         try
         {
             var state = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -234,7 +234,12 @@
                 ? "Profile picture was successfully updated."
                 : string.Join(" | ", res.Errors.Select(e => e.Description));
 
-            await LoadMe();
+            if (res.Succeeded)
+            {
+                // 🔥 WICHTIG: Seite komplett neu laden, um Browser-Cache zu umgehen
+                await Task.Delay(300); // Kurze Pause damit DB-Update fertig ist
+                Nav.NavigateTo("/settings", forceLoad: true); // forceLoad=true erzwingt komplettes Neuladen
+            }
         }
         catch (Exception ex)
         {

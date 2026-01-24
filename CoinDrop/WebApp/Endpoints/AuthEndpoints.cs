@@ -136,7 +136,31 @@ public static class AuthEndpoints
         
         return Results.Redirect("/login?error=externallogininfo");
     }
+    var linkedUser = await userManager.FindByLoginAsync(info.LoginProvider, info.ProviderKey);
+    if (linkedUser != null)
+    {
+        // (optional) Ban-Check wie du ihn eh schon hast
 
+        await signInManager.SignInAsync(linkedUser, isPersistent: false);
+
+        // ForceLogout Token Handling wie bei dir (ich lasse deinen Code dazu gleich)
+        var serverToken = await userManager.GetAuthenticationTokenAsync(linkedUser, "ForceLogout", "Token");
+        if (string.IsNullOrEmpty(serverToken))
+        {
+            serverToken = $"{Guid.NewGuid()}_{DateTimeOffset.UtcNow:o}";
+            await userManager.SetAuthenticationTokenAsync(linkedUser, "ForceLogout", "Token", serverToken);
+        }
+
+        ctx.Response.Cookies.Append("ForceLogoutToken", serverToken, new CookieOptions
+        {
+            HttpOnly = false,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = DateTimeOffset.UtcNow.AddDays(30)
+        });
+
+        return Results.Redirect(returnUrl);
+    }
     var email = info.Principal.FindFirstValue(ClaimTypes.Email);
     if (string.IsNullOrWhiteSpace(email))
     {
@@ -524,6 +548,18 @@ public static class AuthEndpoints
                     
                     return Results.BadRequest("Email change failed.");
                 }
+                // ✅ External Logins (Google/MS) entfernen => alter ProviderKey mappt nicht mehr auf den User
+                var logins = await userManager.GetLoginsAsync(user);
+                foreach (var l in logins)
+                {
+                    if (l.LoginProvider == "Google" || l.LoginProvider == "Microsoft")
+                    {
+                        await userManager.RemoveLoginAsync(user, l.LoginProvider, l.ProviderKey);
+                    }
+                }
+
+// ✅ Sessions invalidieren (sehr empfehlenswert)
+                await userManager.UpdateSecurityStampAsync(user);
 
                 // ✅ Logging für erfolgreiche Email-Änderung
                 await LogUserActionAsync(

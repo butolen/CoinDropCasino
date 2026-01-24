@@ -76,7 +76,7 @@ public class UserService : IUserService
         await smtp.SendMailAsync(message);
     }
 
-    private (string scheme, string host) GetBaseUrl()
+    public (string scheme, string host) GetBaseUrl()
     {
         var httpContext = _httpContextAccessor.HttpContext
                           ?? throw new InvalidOperationException("No HttpContext");
@@ -292,7 +292,9 @@ public class UserService : IUserService
             _ => ".img"
         };
 
-        var fileName = $"{user.Id}{ext}";
+        // 🔥 WICHTIG: Einzigartigen Dateinamen mit Zeitstempel erstellen
+        var timestamp = DateTime.Now.Ticks;
+        var fileName = $"{user.Id}_{timestamp}{ext}";  // Statt nur user.Id
         var absPath = Path.Combine(uploadsRoot, fileName);
 
         await using (var fs = new FileStream(absPath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -300,22 +302,23 @@ public class UserService : IUserService
             await fileStream.CopyToAsync(fs, ct);
         }
 
+        // Neue URL setzen (mit eindeutigem Dateinamen)
         user.ProfileImage = $"/uploads/pfp/{fileName}";
-        
+    
         var result = await _userManager.UpdateAsync(user);
-        
-        // ✅ Logging für Profilbild-Upload
+    
         if (result.Succeeded)
         {
             await LogUserActionAsync(
                 user.Id,
                 LogActionType.UserAction,
                 LogUserType.User,
-                $"User uploaded profile image: {user.UserName} (ID: {user.Id})");
+                $"User uploaded profile image: {user.UserName} (ID: {user.Id}, File: {fileName})");
         }
 
         return result;
     }
+
 
     // -------------------------
     // Resend confirm email (uses /confirm-email endpoint)
@@ -393,19 +396,36 @@ public class UserService : IUserService
         if (user == null)
             return IdentityResult.Failed(new IdentityError { Description = "User not found." });
 
-        var result = await _userManager.ChangeEmailAsync(user, newEmail, token);
-        
-        // ✅ Logging für bestätigte Email-Änderung
-        if (result.Succeeded)
-        {
-            await LogUserActionAsync(
-                user.Id,
-                LogActionType.UserAction,
-                LogUserType.User,
-                $"User confirmed email change to {newEmail}: {user.UserName} (ID: {user.Id})");
-        }
+        var oldEmail = user.Email;
 
-        return result;
+        var result = await _userManager.ChangeEmailAsync(user, newEmail, token);
+
+        if (!result.Succeeded)
+            return result;
+
+        // ✅ 1) Google-Verknüpfung entfernen, damit alter Google-Account NICHT mehr automatisch auf dieses UserId mapped
+        await UnlinkGoogleAsync(user);
+
+        // ✅ 2) Sessions/Cookies invalidieren (sehr empfehlenswert)
+        await _userManager.UpdateSecurityStampAsync(user);
+
+        // ✅ Logging für bestätigte Email-Änderung
+        await LogUserActionAsync(
+            user.Id,
+            LogActionType.UserAction,
+            LogUserType.User,
+            $"User confirmed email change from {oldEmail} to {newEmail}: {user.UserName} (ID: {user.Id}). Google unlinked + SecurityStamp updated.");
+
+        return IdentityResult.Success;
+    }
+    private async Task UnlinkGoogleAsync(ApplicationUser user)
+    {
+        var logins = await _userManager.GetLoginsAsync(user);
+        var google = logins.FirstOrDefault(l => l.LoginProvider == "Google");
+        if (google == null)
+            return;
+
+        await _userManager.RemoveLoginAsync(user, google.LoginProvider, google.ProviderKey);
     }
 
     public async Task<IdentityResult> RequestUserNameChangeAsync(ClaimsPrincipal principal, string newUserName)

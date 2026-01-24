@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Net.Mail;
 using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Identity.UI.Services;
 
 namespace WebApp.services.implementations;
 
@@ -18,7 +19,7 @@ public class AdminUserService : IAdminUserService
     private readonly ILogger<AdminUserService> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly IHttpContextAccessor _httpContextAccessor;
-
+    private readonly IUserService _userService;
     // Email Konfiguration
     private const string SmtpFrom = "mathiasbutolen@gmail.com";
     private const string SmtpHost = "smtp.gmail.com";
@@ -27,6 +28,7 @@ public class AdminUserService : IAdminUserService
     private const string SmtpPass = "tlzbwhyawsugzqlc";
 
     public AdminUserService(
+        IUserService userService,
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
         IRepository<Log> logRepository,
@@ -35,6 +37,7 @@ public class AdminUserService : IAdminUserService
         IServiceProvider serviceProvider,
         IHttpContextAccessor httpContextAccessor)
     {
+        _userService = userService;
         _userManager = userManager;
         _signInManager = signInManager;
         _logRepository = logRepository;
@@ -355,6 +358,8 @@ public class AdminUserService : IAdminUserService
             else
             {
                 // Add admin role
+         
+                var (scheme, host) = _userService.GetBaseUrl();
                 await userManager.AddToRoleAsync(user, "admin");
                 action = "promoted to admin";
                 emailSubject = "👑 Congratulations! You're Now a CoinDrop Admin";
@@ -375,7 +380,7 @@ public class AdminUserService : IAdminUserService
                             </div>
                             <p>As an admin, you play a crucial role in maintaining our platform's security and quality. Please review our admin guidelines carefully.</p>
                             <div style='text-align: center; margin: 30px 0;'>
-                                <a href='https://your-casino-url.com/admin' style='display: inline-block; background: linear-gradient(135deg, #ff9f1a 0%, #ff7f00 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px;'>Access Admin Dashboard</a>
+                                <a href='{scheme}://{host}/admin/dashboard' style='display: inline-block; background: linear-gradient(135deg, #ff9f1a 0%, #ff7f00 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px;'>Access Admin Dashboard</a>
                             </div>
                             <p style='color: #666; font-size: 14px; border-top: 1px solid #eee; padding-top: 15px; margin-top: 20px;'>
                                 Welcome aboard,<br>

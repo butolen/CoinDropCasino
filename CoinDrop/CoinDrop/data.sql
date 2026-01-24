@@ -1,5 +1,5 @@
 CREATE USER 'machine1'@'%' IDENTIFIED BY '1199';
-GRANT SELECT, UPDATE ON casino_db.* TO 'machine1'@'%';
+GRANT SELECT, UPDATE, insert ON casino_db.* TO 'machine1'@'%';
 
 
 

@@ -45,7 +45,7 @@ builder.Services
         options.User.RequireUniqueEmail = true;       // Email eindeutig
         
         // E-Mail-Bestätigung notwendig
-        options.SignIn.RequireConfirmedAccount = true;
+        options.SignIn.RequireConfirmedAccount = true; /// wichtig nur temporär 
     })
     .AddEntityFrameworkStores<CoinDropContext>()
     .AddDefaultTokenProviders();
@@ -123,6 +123,16 @@ builder.Services.AddHttpClient<PriceService>(client =>
     client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+//Helius 
+builder.Services.AddHttpClient("Helius", client =>
+{
+    var apiKey = builder.Configuration["Helius:ApiKey"];
+    client.BaseAddress = new Uri($"https://mainnet.helius-rpc.com/?api-key={apiKey}");
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+builder.Services.AddSingleton<IHeliusSolanaService, HeliusSolanaService>();
 
 builder.Services.AddScoped<IPriceService, PriceService>();
 builder.Services.Configure<CryptoConfig>(

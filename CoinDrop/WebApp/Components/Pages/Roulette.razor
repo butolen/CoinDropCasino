@@ -32,9 +32,7 @@
             <div class="result-pointer"></div>
         </div>
         
-        <div class="spin-countdown" id="spinCountdown">
-            @countdownText
-        </div>
+        
         
         <div class="spin-message">
             @(isCalculating ? "Calculating results..." : "The wheel is spinning...")
@@ -308,7 +306,6 @@
         </div>
     </div>
 </div>
-
 @code {
     // User Data
     private ClaimsPrincipal? user;
@@ -346,8 +343,6 @@
     // Spin Animation
     private bool showSpinAnimation = false;
     private bool isCalculating = false;
-    private string countdownText = "3";
-    private System.Timers.Timer? countdownTimer;
     
     // Chips
     private readonly List<(string Text, double Value)> chips = new()
@@ -380,46 +375,9 @@
         }
     }
 
-    protected override void OnAfterRender(bool firstRender)
-    {
-        if (firstRender)
-        {
-            countdownTimer = new System.Timers.Timer(1000);
-            countdownTimer.Elapsed += async (sender, e) => await UpdateCountdown();
-        }
-    }
-
     public void Dispose()
     {
-        countdownTimer?.Dispose();
-    }
-
-    private async Task UpdateCountdown()
-    {
-        if (int.TryParse(countdownText, out int seconds) && seconds > 1)
-        {
-            countdownText = (seconds - 1).ToString();
-            await InvokeAsync(StateHasChanged);
-        }
-        else if (seconds == 1)
-        {
-            countdownTimer?.Stop();
-            countdownText = "SPINNING!";
-            isCalculating = true;
-            await InvokeAsync(StateHasChanged);
-            
-            // Warte auf die Animation
-            await Task.Delay(5000);
-            
-            // Führe den Spin aus
-            await ExecuteSpin();
-            
-            // Beende die Animation
-            await Task.Delay(1000);
-            showSpinAnimation = false;
-            isCalculating = false;
-            await InvokeAsync(StateHasChanged);
-        }
+        // Kein Timer mehr zum Dispose
     }
 
     private async Task StartSpinAnimation()
@@ -427,15 +385,31 @@
         if (!CanSpin() || showSpinAnimation)
             return;
 
-        showSpinAnimation = true;
-        showResult = false;
-        isCalculating = false;
-        countdownText = "3";
-        errorMessage = string.Empty;
-        
-        countdownTimer?.Start();
-        
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            // 1. Animation starten
+            showSpinAnimation = true;
+            showResult = false;
+            errorMessage = string.Empty;
+            await InvokeAsync(StateHasChanged);
+            
+            // 2. SOFORT Backend-Logik ausführen
+            await ExecuteSpin();
+            
+            // 3. Während Backend arbeitet, 3 Sekunden Animation abwarten
+            await Task.Delay(3000);
+            
+            // 4. Animation beenden
+            showSpinAnimation = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error in spin animation");
+            errorMessage = "An error occurred during the spin";
+            showSpinAnimation = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task ExecuteSpin()

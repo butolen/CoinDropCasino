@@ -15,3 +15,4 @@ public class HardwareDeposit : Transaction
     [DefaultValue(false)]
     public bool Confirmed { get; set; } = false;
 }
+

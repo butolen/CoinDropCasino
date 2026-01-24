@@ -19,6 +19,7 @@
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
       <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
+      <PackageReference Include="SimpleBase" Version="3.0.0" />
       <PackageReference Include="Solnet.Programs" Version="6.1.0" />
       <PackageReference Include="Solnet.Rpc" Version="6.1.0" />
       <PackageReference Include="Solnet.Wallet" Version="6.1.0" />

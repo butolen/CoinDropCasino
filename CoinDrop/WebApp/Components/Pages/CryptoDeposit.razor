@@ -1,6 +1,7 @@
 @page "/deposit-crypto"
 @using System.Security.Claims
 @using CoinDrop
+@using CoinDrop.services.interfaces
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Identity
@@ -10,6 +11,7 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JsRuntime
+@inject ISystemSettingsService SettingsService
 @rendermode InteractiveServer
 
 <div class="deposit-page">
@@ -21,106 +23,190 @@
             <a class="tab active" href="/deposit-crypto">Crypto</a>
         </div>
 
-        <div class="crypto-instructions">
-            <h3 class="instructions-title">How to Deposit Crypto</h3>
-            <div class="instructions-list">
-                <div class="instruction-item">
-                    <span class="instruction-number">1</span>
-                    <span class="instruction-text">Select the correct network below</span>
-                </div>
-                <div class="instruction-item">
-                    <span class="instruction-number">2</span>
-                    <span class="instruction-text">Copy your wallet address</span>
-                </div>
-                <div class="instruction-item">
-                    <span class="instruction-number">3</span>
-                    <span class="instruction-text">Send your crypto from your external wallet</span>
-                </div>
-                <div class="instruction-item">
-                    <span class="instruction-number">4</span>
-                    <span class="instruction-text">Wait for blockchain confirmation (up to 5 minutes)</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="network-section">
-            <label class="deposit-label">Select Network</label>
-            <select class="deposit-select" @bind="SelectedNetwork">
-                <option value="SOL">Solana (SOL)</option>
-            </select>
-            <div class="network-hint">
-                <span class="network-icon">🔗</span>
-                <span class="network-text">Only send SOL tokens on the Solana network</span>
-            </div>
-        </div>
-
-        @if (ShowWallet)
+        @if (!IsSolActive)
         {
-            <div class="wallet-section">
-                <div class="wallet-header">
-                    <h4 class="wallet-title">Send your funds to the address below</h4>
-                    <button class="btn-copy" @onclick="CopyToClipboard" title="Copy to clipboard" disabled="@IsBusy">
-                        📋 Copy
+            <div class="deposit-disabled">
+                <div class="disabled-icon">🚫</div>
+                <div class="disabled-title">SOL is currently disabled</div>
+                <div class="disabled-text">
+                    SOL deposits are currently unavailable. Please try again later or use physical deposit.
+                </div>
+                <div class="disabled-actions">
+                    <button class="btn-primary" @onclick="OnPhysicalDeposit">
+                        GO TO PHYSICAL DEPOSIT
+                    </button>
+                    <button class="btn-secondary" @onclick="OnCancel">
+                        BACK TO DASHBOARD
                     </button>
                 </div>
-                
-                <div class="wallet-box">
-                    <div class="wallet-label">Your Deposit Address</div>
-                    <div class="wallet-address">@WalletAddress</div>
-                </div>
-
-            
-
-               
             </div>
         }
         else
         {
-            <div class="deposit-prompt">
-                <div class="prompt-icon">💰</div>
-                <div class="prompt-text">
-                    Click "SHOW DEPOSIT ADDRESS" to view your personal deposit address. 
+            <div class="crypto-instructions">
+                <h3 class="instructions-title">How to Deposit Crypto</h3>
+                <div class="instructions-list">
+                    <div class="instruction-item">
+                        <span class="instruction-number">1</span>
+                        <span class="instruction-text">Select the correct network below</span>
+                    </div>
+                    <div class="instruction-item">
+                        <span class="instruction-number">2</span>
+                        <span class="instruction-text">Copy your wallet address</span>
+                    </div>
+                    <div class="instruction-item">
+                        <span class="instruction-number">3</span>
+                        <span class="instruction-text">Send your crypto from your external wallet</span>
+                    </div>
+                    <div class="instruction-item">
+                        <span class="instruction-number">4</span>
+                        <span class="instruction-text">Wait for blockchain confirmation (up to 5 minutes)</span>
+                    </div>
                 </div>
             </div>
-        }
 
-        @if (!string.IsNullOrWhiteSpace(ErrorMessage))
-        {
-            <div class="deposit-error">
-                <div class="error-icon">❌</div>
-                <div class="error-text">@ErrorMessage</div>
+            <div class="network-section">
+                <label class="deposit-label">Select Network</label>
+                <select class="deposit-select" @bind="SelectedNetwork">
+                    <option value="SOL">Solana (SOL)</option>
+                </select>
+                <div class="network-hint">
+                    <span class="network-icon">🔗</span>
+                    <span class="network-text">Only send SOL tokens on the Solana network</span>
+                </div>
             </div>
-        }
 
-        @if (!string.IsNullOrWhiteSpace(SuccessMessage))
-        {
-            <div class="deposit-success">
-                <div class="success-icon">✅</div>
-                <div class="success-text">@SuccessMessage</div>
-            </div>
-        }
-
-        <div class="deposit-actions">
-            @if (!ShowWallet)
+            @if (ShowWallet)
             {
-                <button class="btn-primary" @onclick="OnDeposit" disabled="@IsBusy">
-                    SHOW DEPOSIT ADDRESS
-                </button>
+                <div class="wallet-section">
+                    <div class="wallet-header">
+                        <h4 class="wallet-title">Send your funds to the address below</h4>
+                        <button class="btn-copy" @onclick="CopyToClipboard" title="Copy to clipboard" disabled="@IsBusy">
+                            📋 Copy
+                        </button>
+                    </div>
+                    
+                    <div class="wallet-box">
+                        <div class="wallet-label">Your Deposit Address</div>
+                        <div class="wallet-address">@WalletAddress</div>
+                    </div>
+                </div>
             }
-            <button class="btn-secondary" @onclick="OnCancel" disabled="@IsBusy">
-                @(ShowWallet ? "BACK TO DASHBOARD" : "CANCEL")
-            </button>
-        </div>
+            else
+            {
+                <div class="deposit-prompt">
+                    <div class="prompt-icon">💰</div>
+                    <div class="prompt-text">
+                        Click "SHOW DEPOSIT ADDRESS" to view your personal deposit address. 
+                    </div>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                <div class="deposit-error">
+                    <div class="error-icon">❌</div>
+                    <div class="error-text">@ErrorMessage</div>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(SuccessMessage))
+            {
+                <div class="deposit-success">
+                    <div class="success-icon">✅</div>
+                    <div class="success-text">@SuccessMessage</div>
+                </div>
+            }
+
+            <div class="deposit-actions">
+                @if (!ShowWallet)
+                {
+                    <button class="btn-primary" @onclick="OnDeposit" disabled="@IsBusy">
+                        SHOW DEPOSIT ADDRESS
+                    </button>
+                }
+                <button class="btn-secondary" @onclick="OnCancel" disabled="@IsBusy">
+                    @(ShowWallet ? "BACK TO DASHBOARD" : "CANCEL")
+                </button>
+            </div>
+        }
     </div>
 </div>
+
+<style>
+    .deposit-disabled {
+        margin-top: 20px;
+        padding: 30px 20px;
+        background: linear-gradient(135deg, rgba(248, 249, 250, 0.1) 0%, rgba(233, 236, 239, 0.05) 100%);
+        border: 2px solid #dc3545;
+        border-radius: 10px;
+        text-align: center;
+    }
+
+    .disabled-icon {
+        font-size: 48px;
+        margin-bottom: 15px;
+    }
+
+    .disabled-title {
+        font-size: 24px;
+        font-weight: bold;
+        color: #dc3545;
+        margin-bottom: 10px;
+    }
+
+    .disabled-text {
+        color: #adb5bd;
+        font-size: 16px;
+        margin-bottom: 25px;
+        line-height: 1.5;
+    }
+
+    .disabled-actions {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .disabled-actions .btn-primary {
+        background: linear-gradient(180deg, #dc3545 0%, #c82333 100%);
+        border: 1px solid #bd2130;
+    }
+
+    .disabled-actions .btn-secondary {
+        border: 1px solid rgba(220, 53, 69, 0.65);
+        color: rgba(220, 53, 69, 0.95);
+    }
+</style>
 
 @code {
     private string SelectedNetwork = "SOL";
     private bool ShowWallet = false;
     private bool IsBusy = false;
+    private bool IsSolActive = false;
     private string? ErrorMessage;
     private string? SuccessMessage;
     private string WalletAddress = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Prüfe ob SOL aktiv ist (wie in withdraw-crypto)
+            var cryptoFee = await SettingsService.GetCryptoFeeAsync();
+            IsSolActive = cryptoFee.IsActive;
+            
+            Console.WriteLine($"SOL deposit status: {IsSolActive}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking SOL status: {ex.Message}");
+            ErrorMessage = "Error checking network status";
+            // Standardmäßig aktiv, um keine false-positive Blockierung zu haben
+            IsSolActive = true;
+        }
+    }
 
     private async Task OnDeposit()
     {
@@ -131,6 +217,15 @@
 
         try
         {
+            // Doppelte Prüfung, falls sich etwas geändert hat
+            var cryptoFee = await SettingsService.GetCryptoFeeAsync();
+            if (!cryptoFee.IsActive)
+            {
+                IsSolActive = false;
+                ErrorMessage = "SOL is currently disabled";
+                return;
+            }
+
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
             var principal = authState.User;
 
@@ -175,13 +270,11 @@
         IsBusy = true;
         try
         {
-            // Versuche die moderne Clipboard API
             await JsRuntime.InvokeVoidAsync("navigator.clipboard.writeText", WalletAddress);
             
             SuccessMessage = "Address copied to clipboard!";
             ErrorMessage = null;
             
-            // Nach 3 Sekunden die Erfolgsmeldung ausblenden
             _ = Task.Delay(3000).ContinueWith(async _ => 
             {
                 await InvokeAsync(() => 
@@ -195,7 +288,6 @@
         {
             try
             {
-                // Einfacher Fallback
                 var jsCode = 
                     "var textArea = document.createElement('textarea');" +
                     $"textArea.value = '{WalletAddress.Replace("'", "\\'")}';" +
@@ -227,6 +319,11 @@
         {
             IsBusy = false;
         }
+    }
+
+    private void OnPhysicalDeposit()
+    {
+        Nav.NavigateTo("/deposit-phys");
     }
 
     private void OnCancel()
